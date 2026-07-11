@@ -156,16 +156,28 @@ function renderShop(balance) {
 
   list.innerHTML = gifts.map((item) => {
     const ready = balance >= item.cost;
+    const progress = item.cost > 0 ? Math.min(100, Math.round((balance / item.cost) * 100)) : 100;
     const hasMedia = item.media.length > 0;
     const cover = item.media[0];
     return `<div class="shop-item ${hasMedia ? 'has-media' : ''}" ${hasMedia ? `data-preview-id="${item.id}" tabindex="0" role="button" aria-label="查看 ${escapeHtml(item.name)}"` : ''}>
       <div class="shop-thumb">${cover ? mediaThumbnail(cover) : `<span>${categoryIcon(item.category)}</span>`}</div>
-      <div>
+      <div class="shop-content">
         <div class="shop-title">${escapeHtml(item.name)}</div>
-        <div class="shop-meta">${escapeHtml(item.category || '奖励')}${hasMedia ? ' · 点击预览' : ''} · ${ready ? '可以兑换' : `还差 ${item.cost - balance} 颗`}</div>
+        <div class="shop-progress">
+          <div class="shop-progress-label">
+            <span>${ready ? '可兑换' : `${balance} / ${item.cost} ⭐`}</span>
+            <span>${progress}%</span>
+          </div>
+          <div class="shop-progress-track" role="progressbar" aria-label="${escapeHtml(item.name)}兑换进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}">
+            <span class="shop-progress-bar ${ready ? 'is-ready' : ''}" style="width: ${progress}%"></span>
+          </div>
+        </div>
         ${item.description ? `<div class="shop-description">${escapeHtml(item.description)}</div>` : ''}
       </div>
-      <button class="shop-cost ${ready ? 'ready' : 'locked'}" data-shop-id="${item.id}" type="button">${item.cost} 星</button>
+      <div class="shop-actions">
+        <div class="shop-price">${item.cost} ⭐</div>
+        <button class="redeem-button" data-shop-id="${item.id}" type="button" ${ready ? '' : 'disabled'}>兑换</button>
+      </div>
     </div>`;
   }).join('');
 
@@ -176,6 +188,7 @@ function renderShop(balance) {
     };
     element.addEventListener('click', preview);
     element.addEventListener('keydown', (event) => {
+      if (event.target !== element) return;
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         preview();
