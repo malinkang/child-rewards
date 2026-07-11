@@ -48,11 +48,20 @@ async function earnTask(taskId, sourceElement) {
   }
 }
 
-async function spend(item, stars) {
+async function spend(item, stars, files = []) {
   try {
-    const data = await postJson('/api/spend', { item, stars });
-    ledger.unshift(data.entry);
-    render();
+    if (files.length) {
+      const form = new FormData();
+      form.append('item', item);
+      form.append('stars', String(stars));
+      files.forEach((file) => form.append('media', file));
+      const response = await fetch('/api/spend', { method: 'POST', body: form });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || '兑换记录保存失败');
+    } else {
+      await postJson('/api/spend', { item, stars });
+    }
+    await loadRewards();
     showToast('兑换已记录到 Notion');
     return true;
   } catch (error) {
@@ -66,10 +75,6 @@ function render() {
   document.getElementById('balanceValue').textContent = balance;
   document.getElementById('todayValue').textContent = getTodayEarned();
   document.getElementById('weekValue').textContent = getWeekEarned();
-
-  const goalProgress = Math.max(0, Math.min(10, balance));
-  document.getElementById('toyProgressValue').textContent = `${goalProgress}/10`;
-  document.getElementById('toyProgressBar').style.width = `${goalProgress * 10}%`;
 
   renderJar(balance);
   renderTasks();
@@ -180,7 +185,10 @@ function renderLedger() {
   list.innerHTML = ledger.slice(0, 30).map((entry) => {
     const sign = entry.stars > 0 ? '+' : '';
     const starClass = entry.stars >= 0 ? 'positive' : 'negative';
-    return `<div class="ledger-item">
+    const hasMedia = entry.media?.length > 0;
+    const cover = hasMedia ? entry.media[0] : null;
+    return `<div class="ledger-item ${hasMedia ? 'has-media' : ''}" ${hasMedia ? `data-history-id="${entry.id}" tabindex="0" role="button" aria-label="查看 ${escapeHtml(entry.title)} 的照片或视频"` : ''}>
+      ${cover ? `<div class="ledger-thumb">${mediaThumbnail(cover)}</div>` : ''}
       <div>
         <div class="ledger-title">${escapeHtml(entry.title)}</div>
         <div class="ledger-meta">${formatDate(entry.date)}${entry.reason ? ` · ${escapeHtml(entry.reason)}` : ''}</div>
@@ -188,6 +196,20 @@ function renderLedger() {
       <div class="ledger-stars ${starClass}">${sign}${entry.stars}</div>
     </div>`;
   }).join('');
+
+  list.querySelectorAll('[data-history-id]').forEach((element) => {
+    const preview = () => {
+      const entry = ledger.find((candidate) => candidate.id === element.dataset.historyId);
+      if (entry) openMediaViewer({ name: entry.title, media: entry.media });
+    };
+    element.addEventListener('click', preview);
+    element.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        preview();
+      }
+    });
+  });
 }
 
 async function loadRewards(showSuccess = false) {
@@ -373,31 +395,25 @@ function showToast(message) {
   showToast.timer = window.setTimeout(() => toast.classList.remove('show'), 2300);
 }
 
-function exportData() {
-  const blob = new Blob([JSON.stringify({ tasks, ledger, gifts }, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `child-rewards-${todayKey()}.json`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 function setupEvents() {
   document.getElementById('refreshRewardsButton').addEventListener('click', () => loadRewards(true));
   document.getElementById('refreshGiftsButton').addEventListener('click', () => loadGifts(true));
-  document.getElementById('exportButton').addEventListener('click', exportData);
-
   document.getElementById('spendForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const item = String(form.get('item') || '').trim();
     const stars = Number(form.get('stars'));
+    const files = [...event.currentTarget.elements.media.files];
     if (!item || !Number.isInteger(stars) || stars < 1) return;
-    if (await spend(item, stars)) {
+    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    submitButton.disabled = true;
+    submitButton.textContent = files.length ? '上传并保存中...' : '保存中...';
+    if (await spend(item, stars, files)) {
       event.currentTarget.reset();
       event.currentTarget.elements.stars.value = 10;
     }
+    submitButton.disabled = false;
+    submitButton.textContent = '确认兑换';
   });
 
   const mediaDialog = document.getElementById('mediaDialog');

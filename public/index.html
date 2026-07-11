@@ -47,11 +47,6 @@
         <strong id="weekValue">0</strong>
         <span>颗星</span>
       </article>
-      <article class="stat-card blue">
-        <span class="stat-label">10 元玩具进度</span>
-        <strong id="toyProgressValue">0/10</strong>
-        <div class="mini-track"><div id="toyProgressBar"></div></div>
-      </article>
     </section>
 
     <section class="sticker-strip" aria-label="今日鼓励贴纸">
@@ -99,6 +94,7 @@
         <form id="spendForm" class="stack-form">
           <label>兑换内容<input name="item" placeholder="10 元小玩具" required /></label>
           <label>消耗星星<input name="stars" type="number" min="1" max="200" value="10" required /></label>
+          <label>兑换照片或视频（可选）<input name="media" type="file" accept="image/*,video/*" multiple /></label>
           <button type="submit">确认兑换</button>
         </form>
       </article>
@@ -109,9 +105,6 @@
         <div>
           <p class="eyebrow">History</p>
           <h2>闪亮成长册</h2>
-        </div>
-        <div class="ledger-actions">
-          <button id="exportButton" class="subtle-button" type="button">导出 JSON</button>
         </div>
       </div>
       <div id="ledgerList" class="ledger-list"></div>

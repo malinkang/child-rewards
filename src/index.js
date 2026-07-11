@@ -77,6 +77,7 @@ async function earnTask(request, env) {
   if (!isNotionId(taskId)) return json({ error: '任务无效' }, 400);
 
   const taskPage = await notion(`/pages/${taskId}`, env);
+  if (taskPage.archived || taskPage.in_trash) return json({ error: '任务已经不存在' }, 400);
   if (taskPage.parent?.database_id?.replaceAll('-', '') !== env.NOTION_TASKS_DATABASE_ID.replaceAll('-', '')) {
     return json({ error: '任务无效' }, 400);
   }
@@ -121,17 +122,26 @@ async function earnTask(request, env) {
 
 async function spendStars(request, env) {
   requireRewardsConfig(env);
-  const body = await readJson(request);
+  const body = await readSpendRequest(request);
   const item = typeof body.item === 'string' ? body.item.trim().slice(0, 120) : '';
   const stars = Number(body.stars);
   if (!item || !Number.isInteger(stars) || stars < 1 || stars > 10000) {
     return json({ error: '兑换内容或星星数量无效' }, 400);
+  }
+  if (body.files.length > 5) return json({ error: '一次最多上传 5 个文件' }, 400);
+  for (const file of body.files) {
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+      return json({ error: '只支持图片或视频文件' }, 400);
+    }
+    if (file.size > 20 * 1024 * 1024) return json({ error: '单个文件不能超过 20 MB' }, 400);
   }
 
   const ledger = (await getRecordPages(env)).map(mapLedgerEntry);
   const balance = sumBalance(ledger);
   if (stars > balance) return json({ error: `星星还不够，还差 ${stars - balance} 颗` }, 409);
 
+  const media = [];
+  for (const file of body.files) media.push(await uploadNotionFile(file, env));
   const balanceAfter = balance - stars;
   const entry = await createRecord(env, {
     title: `兑换：${item}`,
@@ -139,6 +149,7 @@ async function spendStars(request, env) {
     stars: -stars,
     reason: item,
     balanceAfter,
+    media,
   });
   return Response.json({ entry, balance: balanceAfter }, { status: 201, headers: NO_STORE_HEADERS });
 }
@@ -150,7 +161,7 @@ function updateTaskStatus(taskId, statusId, env) {
   });
 }
 
-async function createRecord(env, { title, type, stars, taskId, reason, balanceAfter }) {
+async function createRecord(env, { title, type, stars, taskId, reason, balanceAfter, media = [] }) {
   const now = new Date().toISOString();
   const properties = {
     '记录': titleProperty(title),
@@ -161,12 +172,34 @@ async function createRecord(env, { title, type, stars, taskId, reason, balanceAf
     '余额': { number: balanceAfter },
   };
   if (taskId) properties['任务'] = { relation: [{ id: taskId }] };
+  if (media.length) properties['媒体'] = { files: media };
 
-  const page = await notion('/pages', env, {
+  let page = await notion('/pages', env, {
     method: 'POST',
     body: JSON.stringify({ parent: { database_id: env.NOTION_LEDGER_DATABASE_ID }, properties }),
   });
+  if (media.length) page = await notion(`/pages/${page.id}`, env);
   return mapLedgerEntry(page);
+}
+
+async function uploadNotionFile(file, env) {
+  const upload = await notion('/file_uploads', env, {
+    method: 'POST',
+    headers: { 'Notion-Version': '2025-09-03' },
+    body: JSON.stringify({
+      mode: 'single_part',
+      filename: file.name || 'reward-media',
+      content_type: file.type,
+    }),
+  });
+  const form = new FormData();
+  form.append('file', file, file.name || 'reward-media');
+  await notion(`/file_uploads/${upload.id}/send`, env, {
+    method: 'POST',
+    headers: { 'Notion-Version': '2025-09-03' },
+    body: form,
+  });
+  return { name: file.name || 'reward-media', type: 'file_upload', file_upload: { id: upload.id } };
 }
 
 async function getRecordPages(env) {
@@ -195,12 +228,13 @@ async function queryAll(databaseId, env, query) {
 }
 
 async function notion(path, env, init = {}) {
+  const isFormData = init.body instanceof FormData;
   const response = await fetch(`${NOTION_API}${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${env.NOTION_TOKEN}`,
-      'Content-Type': 'application/json',
       'Notion-Version': env.NOTION_VERSION || '2022-06-28',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...init.headers,
     },
   });
@@ -249,6 +283,7 @@ function mapLedgerEntry(page) {
     taskId: properties['任务']?.relation?.[0]?.id || '',
     balanceAfter: properties['余额']?.number || 0,
     date: properties['时间']?.date?.start || page.created_time,
+    media: (properties['媒体']?.files || []).map(mapMedia).filter(Boolean),
   };
 }
 
@@ -309,6 +344,19 @@ async function readJson(request) {
   } catch {
     return {};
   }
+}
+
+async function readSpendRequest(request) {
+  if (request.headers.get('Content-Type')?.includes('multipart/form-data')) {
+    const form = await request.formData();
+    return {
+      item: form.get('item'),
+      stars: form.get('stars'),
+      files: form.getAll('media').filter((value) => value instanceof File && value.size > 0),
+    };
+  }
+  const body = await readJson(request);
+  return { ...body, files: [] };
 }
 
 function requireConfig(env, databaseId) {
