@@ -3,6 +3,23 @@ let ledger = [];
 let gifts = [];
 let rewardsStatus = 'loading';
 let giftsStatus = 'loading';
+const AUDIO_ENABLED_KEY = 'childRewards.audio.enabled';
+const WELCOME_PLAYED_KEY = 'childRewards.audio.welcomeDate';
+const AUDIO_CLIPS = Object.freeze({
+  welcomeStart: ['/audio/welcome-start-tasks.mp3', '/audio/welcome-new-day.mp3'],
+  welcomeProgress: ['/audio/welcome-collect-stars.mp3'],
+  allComplete: ['/audio/all-tasks-complete.mp3'],
+  chineseComplete: ['/audio/task-chinese-complete-1.mp3', '/audio/task-chinese-complete-2.mp3'],
+  readingComplete: ['/audio/task-reading-complete-1.mp3', '/audio/task-reading-complete-2.mp3'],
+  notEnoughStars: ['/audio/not-enough-stars.mp3'],
+  rewardRedeemed: ['/audio/reward-redeemed-1.mp3', '/audio/reward-redeemed-2.mp3'],
+  encourage: ['/audio/encourage-try-again.mp3', '/audio/encourage-rest.mp3', '/audio/encourage-think-together.mp3'],
+  goodbye: ['/audio/goodbye-tomorrow.mp3', '/audio/goodbye-playtime.mp3'],
+});
+let soundEnabled = localStorage.getItem(AUDIO_ENABLED_KEY) !== 'false';
+let activeAudio = null;
+let pendingWelcome = '';
+let welcomeEvaluated = false;
 
 function getBalance() {
   return ledger.reduce((sum, entry) => sum + Number(entry.stars || 0), 0);
@@ -42,6 +59,7 @@ async function earnTask(taskId, sourceElement) {
     render();
     celebrateEarn(task.stars, sourceRect);
     showToast(`+${task.stars} 颗星，已存入星星罐`);
+    playTaskCompletionAudio(task);
   } catch (error) {
     showToast(error.message);
     await loadRewards();
@@ -63,9 +81,11 @@ async function spend(item, stars, files = []) {
     }
     await loadRewards();
     showToast('兑换已记录到 Notion');
+    playAudio(AUDIO_CLIPS.rewardRedeemed);
     return true;
   } catch (error) {
     showToast(error.message);
+    if (error.message.includes('还差')) playAudio(AUDIO_CLIPS.notEnoughStars);
     return false;
   }
 }
@@ -225,6 +245,7 @@ async function loadRewards(showSuccess = false) {
     ledger = Array.isArray(data.ledger) ? data.ledger : [];
     rewardsStatus = 'ready';
     if (showSuccess) showToast('任务和星星记录已刷新');
+    if (!showSuccess) maybePlayWelcome();
   } catch (error) {
     rewardsStatus = 'error';
     showToast(error.message);
@@ -264,6 +285,74 @@ async function postJson(path, payload) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || '操作失败，请稍后再试');
   return data;
+}
+
+function playTaskCompletionAudio(task) {
+  if (tasks.length && tasks.every((candidate) => candidate.done)) {
+    playAudio(AUDIO_CLIPS.allComplete);
+    return;
+  }
+  if (/汉字|识字/.test(task.name)) {
+    playAudio(AUDIO_CLIPS.chineseComplete);
+  } else if (/英语|阅读|绘本|牛津/.test(task.name)) {
+    playAudio(AUDIO_CLIPS.readingComplete);
+  }
+}
+
+function maybePlayWelcome(force = false) {
+  if ((!force && welcomeEvaluated) || !tasks.length) return;
+  welcomeEvaluated = true;
+  if (!soundEnabled || (!force && localStorage.getItem(WELCOME_PLAYED_KEY) === todayKey())) return;
+  const completed = tasks.filter((task) => task.done).length;
+  const clips = completed === tasks.length
+    ? AUDIO_CLIPS.allComplete
+    : completed === 0 ? AUDIO_CLIPS.welcomeStart : AUDIO_CLIPS.welcomeProgress;
+  playAudio(clips, { welcome: true });
+}
+
+async function playAudio(clips, { welcome = false } = {}) {
+  if (!soundEnabled || !clips?.length) return false;
+  const source = clips[Math.floor(Math.random() * clips.length)];
+  activeAudio?.pause();
+  const audio = new Audio(source);
+  audio.volume = 0.55;
+  activeAudio = audio;
+  try {
+    await audio.play();
+    pendingWelcome = '';
+    if (welcome) localStorage.setItem(WELCOME_PLAYED_KEY, todayKey());
+    return true;
+  } catch {
+    if (welcome) pendingWelcome = source;
+    return false;
+  }
+}
+
+function playPendingWelcome() {
+  if (!pendingWelcome || !soundEnabled) return;
+  playAudio([pendingWelcome], { welcome: true });
+}
+
+function updateSoundButton() {
+  const button = document.getElementById('soundToggle');
+  const label = soundEnabled ? '关闭声音' : '开启声音';
+  document.getElementById('soundIcon').textContent = soundEnabled ? '🔊' : '🔇';
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.setAttribute('aria-pressed', String(soundEnabled));
+}
+
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  localStorage.setItem(AUDIO_ENABLED_KEY, String(soundEnabled));
+  if (!soundEnabled) {
+    activeAudio?.pause();
+    pendingWelcome = '';
+  } else {
+    welcomeEvaluated = false;
+    maybePlayWelcome(true);
+  }
+  updateSoundButton();
 }
 
 function celebrateEarn(stars, sourceRect) {
@@ -396,6 +485,11 @@ function showToast(message) {
 }
 
 function setupEvents() {
+  updateSoundButton();
+  document.getElementById('soundToggle').addEventListener('click', toggleSound);
+  document.addEventListener('pointerdown', (event) => {
+    if (!event.target.closest('#soundToggle')) playPendingWelcome();
+  }, { capture: true });
   document.getElementById('refreshRewardsButton').addEventListener('click', () => loadRewards(true));
   document.getElementById('refreshGiftsButton').addEventListener('click', () => loadGifts(true));
   document.getElementById('spendForm').addEventListener('submit', async (event) => {

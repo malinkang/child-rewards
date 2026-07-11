@@ -131,4 +131,17 @@ curl https://child.malinkang.com/api/gifts
 - 兑换媒体最多 5 个，单个文件最大 20 MB，仅支持图片和视频。
 - 媒体上传至 Notion，不存储在浏览器或 Cloudflare。
 
+## Voice Feedback
+
+MiniMax 生成的固定语音位于 `public/audio/`，不需要运行时 TTS API：
+
+- 首次读取任务后，根据“未开始 / 部分完成 / 全部完成”选择欢迎语。
+- 欢迎语每天最多主动播放一次；浏览器阻止自动播放时，延迟到用户第一次点击。
+- 完成汉字或阅读任务时播放对应语音。
+- 完成当天最后一个任务时只播放“全部完成”，避免连续播报。
+- 兑换成功和星星不足使用独立语音。
+- 声音开关保存在浏览器 `localStorage`，默认音量为 55%。
+
+语音文字、文件名和用途见 [docs/audio.md](./docs/audio.md)。
+
 更详细的 AI 修改约束和验证流程见 [AGENTS.md](./AGENTS.md)。

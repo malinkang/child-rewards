@@ -104,6 +104,12 @@ When adding an endpoint, update `README.md`, this file, and proportional tests i
 - Preserve the two overview cards: 今日获得 and 本周获得.
 - History entries with media show a thumbnail and open the shared media viewer.
 - Gift media and reward-history media use the same viewer behavior.
+- Fixed voice clips live in `public/audio/`; do not add a runtime TTS dependency without explicit approval.
+- Choose welcome audio only after `/api/rewards` resolves. Use task Status to select not-started, progress, or all-complete audio.
+- Play welcome audio at most once per Beijing date. If autoplay is blocked, defer it until the first user gesture.
+- Completing the final task plays only the all-complete clip. Do not overlap it with a task-specific clip.
+- Preserve the sound toggle, 55% playback volume, and the user's `localStorage` preference.
+- Keep `docs/audio.md` synchronized when adding, replacing, or remapping voice clips.
 - Respect `prefers-reduced-motion` and keep desktop/mobile layouts free of horizontal overflow.
 
 ## Verification
@@ -124,6 +130,7 @@ For local integration testing, run Wrangler with `.dev.vars`, then verify:
 - Completing a temporary task persists Done after reload and prevents duplicate earning.
 - Spending rejects insufficient balance.
 - A real small image upload appears in the star record and history viewer.
+- Audio assets return HTTP 200, the sound toggle persists, and state-specific clips are selected correctly.
 - Temporary Notion pages are archived by exact ID and the original balance is restored.
 
 After deployment:
