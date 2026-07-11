@@ -180,11 +180,15 @@ h2 { font-size: 28px; }
 .panel { margin-top: 18px; padding: 24px; }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
 .panel-heading.compact { margin-bottom: 14px; }
+.task-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .subtle-button, .danger-button { border: 3px solid white; border-radius: 999px; background: var(--blue-soft); color: var(--ink); padding: 10px 15px; font-weight: 900; box-shadow: 0 5px 0 rgba(105,189,218,.15); }
 .danger-button { background: var(--pink-soft); color: var(--pink-deep); }
 .subtle-button:active, .danger-button:active, form button:active, .task-card:active { transform: translateY(3px); box-shadow: 0 2px 0 rgba(126,77,101,.08); }
 
 .task-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.task-grid > .empty { grid-column: 1 / -1; }
+.task-loading { display: flex; align-items: center; gap: 10px; }
+.task-loading::before { content: ""; flex: 0 0 auto; width: 18px; height: 18px; border: 3px solid rgba(105,189,218,.2); border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; }
 .task-card { position: relative; min-height: 176px; border: 4px solid white; border-radius: 26px; padding: 20px; color: var(--ink); background: linear-gradient(155deg, #fff, #ffe0eb); text-align: left; box-shadow: 0 8px 0 rgba(245,143,177,.14); transition: transform 160ms ease, box-shadow 160ms ease; overflow: hidden; }
 .task-card:nth-child(2) { background: linear-gradient(155deg, #fff, #dff5fb); box-shadow: 0 8px 0 rgba(105,189,218,.13); }
 .task-card:nth-child(3) { background: linear-gradient(155deg, #fff, #fff0b8); box-shadow: 0 8px 0 rgba(255,216,110,.18); }
@@ -202,6 +206,7 @@ h2 { font-size: 28px; }
 .task-card.is-complete .task-check { border-color: white; background: var(--mint); transform: rotate(4deg); }
 .task-card.is-complete .task-check span { color: #357865; transform: scale(1) rotate(0); }
 .task-icon { display: grid; place-items: center; width: 56px; height: 56px; margin-bottom: 19px; border: 3px solid white; border-radius: 50%; background: rgba(255,255,255,.72); font-size: 28px; font-weight: 900; box-shadow: 0 5px 0 rgba(126,77,101,.06); }
+.task-icon img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
 .task-icon.book, .task-icon.tv { font-size: 25px; }
 .task-card strong { display: block; font-size: 21px; }
 .task-card small { display: block; margin-top: 8px; color: var(--pink-deep); font-size: 16px; font-weight: 900; }

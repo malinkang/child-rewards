@@ -1,11 +1,12 @@
 # Child Rewards
 
-A Cloudflare Worker app for tracking a child's local star rewards and displaying gifts managed in Notion.
+A Cloudflare Worker app for tracking a child's star rewards with tasks, history, and gifts managed in Notion.
 
 ## Data
 
-- Star balances, completed tasks, and redemption history stay in browser `localStorage`.
-- Gifts are read from a Notion database through the Worker API.
+- Tasks and their page icons are read from the Notion `每日任务` database.
+- Star balances, completed tasks, and redemption history are stored in the Notion `星星记录` database.
+- Gifts are read from the Notion `甜心礼品屋` database.
 - Images and videos are uploaded and managed in the Notion `媒体` files property.
 - The Notion token is stored as the Cloudflare secret `NOTION_TOKEN`.
 

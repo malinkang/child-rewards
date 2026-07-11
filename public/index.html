@@ -67,45 +67,14 @@
           <p class="eyebrow">Earn Stars</p>
           <h2>今天摘哪颗星？</h2>
         </div>
-        <button id="resetTodayButton" class="subtle-button" type="button">今日重置</button>
+        <div class="task-actions">
+          <button id="refreshRewardsButton" class="subtle-button" type="button">刷新</button>
+          <button id="resetTodayButton" class="subtle-button" type="button">今日重置</button>
+        </div>
       </div>
 
-      <div class="task-grid">
-        <button class="task-card" type="button" data-task="chinese">
-          <span class="task-check" aria-hidden="true"><span>✓</span></span>
-          <span class="task-icon">字</span>
-          <strong>学 1 个汉字</strong>
-          <small>+1 星</small>
-          <em id="chineseDone" class="done-label hidden">已完成</em>
-        </button>
-        <button class="task-card" type="button" data-task="oxford">
-          <span class="task-check" aria-hidden="true"><span>✓</span></span>
-          <span class="task-icon book">📚</span>
-          <strong>读 2 本牛津树</strong>
-          <small>+2 星</small>
-          <em id="oxfordDone" class="done-label hidden">已完成</em>
-        </button>
-        <button class="task-card" type="button" data-task="tidy">
-          <span class="task-check" aria-hidden="true"><span>✓</span></span>
-          <span class="task-icon">🧸</span>
-          <strong>收拾好玩具</strong>
-          <small>+1 星</small>
-          <em id="tidyDone" class="done-label hidden">已完成</em>
-        </button>
-        <button class="task-card" type="button" data-task="brush">
-          <span class="task-check" aria-hidden="true"><span>✓</span></span>
-          <span class="task-icon">🪥</span>
-          <strong>自己刷牙</strong>
-          <small>+1 星</small>
-          <em id="brushDone" class="done-label hidden">已完成</em>
-        </button>
-        <button class="task-card" type="button" data-task="english">
-          <span class="task-check" aria-hidden="true"><span>✓</span></span>
-          <span class="task-icon">🎵</span>
-          <strong>听英语儿歌</strong>
-          <small>+1 星</small>
-          <em id="englishDone" class="done-label hidden">已完成</em>
-        </button>
+      <div id="taskGrid" class="task-grid">
+        <div class="empty task-loading">正在从 Notion 取回任务...</div>
       </div>
     </section>
 
@@ -144,7 +113,6 @@
         </div>
         <div class="ledger-actions">
           <button id="exportButton" class="subtle-button" type="button">导出 JSON</button>
-          <button id="clearButton" class="danger-button" type="button">清空</button>
         </div>
       </div>
       <div id="ledgerList" class="ledger-list"></div>
