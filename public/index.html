@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>甜心星星屋</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="sky" aria-hidden="true">
+    <span class="bow bow-one"></span>
+    <span class="bow bow-two"></span>
+    <span class="cloud cloud-one"></span>
+    <span class="cloud cloud-two"></span>
+    <span class="heart heart-one">♥</span>
+    <span class="heart heart-two">♥</span>
+  </div>
+
+  <main class="app-shell">
+    <header class="hero">
+      <section class="hero-copy">
+        <p class="eyebrow">Sweet Star House</p>
+        <h1>甜心星星屋</h1>
+        <p class="subtitle">把今天的小努力，装进软乎乎的星星罐。认真学习、开心阅读，每一颗都闪闪发光。</p>
+        <div class="mascot-card" aria-label="星星小助手">
+          <div class="mascot-face"><span class="mascot-bow"></span><span class="eye left"></span><span class="eye right"></span><span class="nose"></span></div>
+          <div class="speech-bubble">今天也要甜甜地加油呀！</div>
+        </div>
+      </section>
+      <section class="star-jar" aria-label="当前星星余额">
+        <div class="jar-lid"></div>
+        <div class="jar-body">
+          <div id="jarStars" class="jar-stars"></div>
+          <div class="balance-number"><span id="balanceValue">0</span><small>颗星</small></div>
+        </div>
+      </section>
+    </header>
+
+    <section class="stats-grid" aria-label="星星概览">
+      <article class="stat-card peach">
+        <span class="stat-label">今日获得</span>
+        <strong id="todayValue">0</strong>
+        <span>颗星</span>
+      </article>
+      <article class="stat-card green">
+        <span class="stat-label">本周获得</span>
+        <strong id="weekValue">0</strong>
+        <span>颗星</span>
+      </article>
+      <article class="stat-card blue">
+        <span class="stat-label">10 元玩具进度</span>
+        <strong id="toyProgressValue">0/10</strong>
+        <div class="mini-track"><div id="toyProgressBar"></div></div>
+      </article>
+    </section>
+
+    <section class="sticker-strip" aria-label="今日鼓励贴纸">
+      <span>🎀 坚持</span>
+      <span>⭐ 努力</span>
+      <span>☁️ 阅读</span>
+      <span>🍮 兑换</span>
+    </section>
+
+    <section class="panel tasks-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Earn Stars</p>
+          <h2>今天摘哪颗星？</h2>
+        </div>
+        <button id="resetTodayButton" class="subtle-button" type="button">今日重置</button>
+      </div>
+
+      <div class="task-grid">
+        <button class="task-card" type="button" data-task="chinese">
+          <span class="task-check" aria-hidden="true"><span>✓</span></span>
+          <span class="task-icon">字</span>
+          <strong>学 1 个汉字</strong>
+          <small>+1 星</small>
+          <em id="chineseDone" class="done-label hidden">已完成</em>
+        </button>
+        <button class="task-card" type="button" data-task="oxford">
+          <span class="task-check" aria-hidden="true"><span>✓</span></span>
+          <span class="task-icon book">📚</span>
+          <strong>读 2 本牛津树</strong>
+          <small>+2 星</small>
+          <em id="oxfordDone" class="done-label hidden">已完成</em>
+        </button>
+        <button class="task-card" type="button" data-task="tidy">
+          <span class="task-check" aria-hidden="true"><span>✓</span></span>
+          <span class="task-icon">🧸</span>
+          <strong>收拾好玩具</strong>
+          <small>+1 星</small>
+          <em id="tidyDone" class="done-label hidden">已完成</em>
+        </button>
+        <button class="task-card" type="button" data-task="brush">
+          <span class="task-check" aria-hidden="true"><span>✓</span></span>
+          <span class="task-icon">🪥</span>
+          <strong>自己刷牙</strong>
+          <small>+1 星</small>
+          <em id="brushDone" class="done-label hidden">已完成</em>
+        </button>
+        <button class="task-card" type="button" data-task="english">
+          <span class="task-check" aria-hidden="true"><span>✓</span></span>
+          <span class="task-icon">🎵</span>
+          <strong>听英语儿歌</strong>
+          <small>+1 星</small>
+          <em id="englishDone" class="done-label hidden">已完成</em>
+        </button>
+      </div>
+    </section>
+
+    <section class="content-grid">
+      <article class="panel shop-panel">
+        <div class="panel-heading compact">
+          <div>
+            <p class="eyebrow">Notion Gifts</p>
+            <h2>甜心礼物屋</h2>
+          </div>
+          <button id="refreshGiftsButton" class="subtle-button" type="button">刷新</button>
+        </div>
+        <div id="shopList" class="shop-list"></div>
+      </article>
+
+      <article class="panel spend-panel">
+        <div class="panel-heading compact">
+          <div>
+            <p class="eyebrow">Spend</p>
+            <h2>兑换心愿礼物</h2>
+          </div>
+        </div>
+        <form id="spendForm" class="stack-form">
+          <label>兑换内容<input name="item" placeholder="10 元小玩具" required /></label>
+          <label>消耗星星<input name="stars" type="number" min="1" max="200" value="10" required /></label>
+          <button type="submit">确认兑换</button>
+        </form>
+      </article>
+    </section>
+
+    <section class="panel ledger-panel">
+      <div class="panel-heading compact">
+        <div>
+          <p class="eyebrow">History</p>
+          <h2>闪亮成长册</h2>
+        </div>
+        <div class="ledger-actions">
+          <button id="exportButton" class="subtle-button" type="button">导出 JSON</button>
+          <button id="clearButton" class="danger-button" type="button">清空</button>
+        </div>
+      </div>
+      <div id="ledgerList" class="ledger-list"></div>
+    </section>
+  </main>
+
+  <dialog id="mediaDialog" class="app-dialog media-dialog">
+    <div class="dialog-card media-card">
+      <div class="media-heading">
+        <h2 id="mediaViewerTitle">礼品预览</h2>
+        <button id="closeMediaButton" class="media-close" type="button" aria-label="关闭预览">×</button>
+      </div>
+      <div id="mediaViewer" class="media-viewer"></div>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="./app.js" type="module"></script>
+</body>
+</html>

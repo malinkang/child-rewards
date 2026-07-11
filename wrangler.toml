@@ -1,0 +1,15 @@
+name = "child-rewards"
+main = "src/index.js"
+compatibility_date = "2026-07-11"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[vars]
+NOTION_DATABASE_ID = "39a86019-c92c-81a4-b432-ca254a0e3de2"
+NOTION_VERSION = "2022-06-28"
+
+[[routes]]
+pattern = "child.malinkang.com"
+custom_domain = true
