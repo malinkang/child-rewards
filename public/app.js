@@ -23,8 +23,7 @@ function getWeekEarned() {
 }
 
 function hasTaskDoneToday(taskId) {
-  const today = todayKey();
-  return ledger.some((entry) => entry.type === 'earn' && entry.taskId === taskId && todayKey(new Date(entry.date)) === today);
+  return tasks.some((task) => task.id === taskId && task.done);
 }
 
 async function earnTask(taskId, sourceElement) {
@@ -39,6 +38,7 @@ async function earnTask(taskId, sourceElement) {
   try {
     const data = await postJson('/api/earn', { taskId });
     ledger.unshift(data.entry);
+    task.done = true;
     render();
     celebrateEarn(task.stars, sourceRect);
     showToast(`+${task.stars} 颗星，已存入星星罐`);
@@ -58,20 +58,6 @@ async function spend(item, stars) {
   } catch (error) {
     showToast(error.message);
     return false;
-  }
-}
-
-async function resetToday() {
-  const button = document.getElementById('resetTodayButton');
-  button.disabled = true;
-  try {
-    const data = await postJson('/api/reset-today', {});
-    await loadRewards();
-    showToast(data.removed ? `已重置 ${data.removed} 项今日任务` : '今天还没有完成的任务');
-  } catch (error) {
-    showToast(error.message);
-  } finally {
-    button.disabled = false;
   }
 }
 
@@ -102,7 +88,7 @@ function renderTasks() {
     return;
   }
   if (!tasks.length) {
-    grid.innerHTML = '<div class="empty">任务库还是空的。在 Notion 中添加任务并勾选“启用”，然后点击刷新。</div>';
+    grid.innerHTML = '<div class="empty">今天还没有任务。在 Notion 中添加任务并把“日期”设为今天，然后点击刷新。</div>';
     return;
   }
 
@@ -400,7 +386,6 @@ function exportData() {
 function setupEvents() {
   document.getElementById('refreshRewardsButton').addEventListener('click', () => loadRewards(true));
   document.getElementById('refreshGiftsButton').addEventListener('click', () => loadGifts(true));
-  document.getElementById('resetTodayButton').addEventListener('click', resetToday);
   document.getElementById('exportButton').addEventListener('click', exportData);
 
   document.getElementById('spendForm').addEventListener('submit', async (event) => {

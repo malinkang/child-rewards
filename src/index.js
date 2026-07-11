@@ -20,9 +20,6 @@ export default {
       if (url.pathname === '/api/spend' && request.method === 'POST') {
         return handleWrite(request, () => spendStars(request, env));
       }
-      if (url.pathname === '/api/reset-today' && request.method === 'POST') {
-        return handleWrite(request, () => resetToday(env));
-      }
       if (url.pathname.startsWith('/api/')) {
         return json({ error: 'Not found' }, 404);
       }
@@ -60,7 +57,7 @@ async function getRewards(env) {
   requireRewardsConfig(env);
   const [taskPages, recordPages] = await Promise.all([
     queryAll(env.NOTION_TASKS_DATABASE_ID, env, {
-      filter: { property: '启用', checkbox: { equals: true } },
+      filter: { property: '日期', date: { equals: shanghaiDateKey() } },
       sorts: [
         { property: '排序', direction: 'ascending' },
         { timestamp: 'created_time', direction: 'ascending' },
@@ -68,7 +65,7 @@ async function getRewards(env) {
     }),
     getRecordPages(env),
   ]);
-  const tasks = taskPages.map(mapTask).filter((task) => task.name && task.stars > 0);
+  const tasks = taskPages.map((page) => mapTask(page, env)).filter((task) => task.name && task.stars > 0);
   const ledger = recordPages.map(mapLedgerEntry);
   return Response.json({ tasks, ledger, balance: sumBalance(ledger) }, { headers: NO_STORE_HEADERS });
 }
@@ -83,8 +80,9 @@ async function earnTask(request, env) {
   if (taskPage.parent?.database_id?.replaceAll('-', '') !== env.NOTION_TASKS_DATABASE_ID.replaceAll('-', '')) {
     return json({ error: '任务无效' }, 400);
   }
-  const task = mapTask(taskPage);
-  if (!task.active || task.stars < 1) return json({ error: '任务未启用' }, 400);
+  const task = mapTask(taskPage, env);
+  if (task.date !== shanghaiDateKey() || task.stars < 1) return json({ error: '这不是今天的任务' }, 400);
+  if (task.done) return json({ error: '这个任务今天已经完成啦' }, 409);
 
   const { start, end } = shanghaiDayRange();
   const duplicate = await queryAll(env.NOTION_LEDGER_DATABASE_ID, env, {
@@ -109,6 +107,15 @@ async function earnTask(request, env) {
     reason: task.reason,
     balanceAfter,
   });
+  try {
+    await updateTaskStatus(taskId, env.NOTION_TASK_DONE_STATUS_ID, env);
+  } catch (error) {
+    await notion(`/pages/${entry.id}`, env, {
+      method: 'PATCH',
+      body: JSON.stringify({ archived: true }),
+    });
+    throw error;
+  }
   return Response.json({ entry, balance: balanceAfter }, { status: 201, headers: NO_STORE_HEADERS });
 }
 
@@ -136,30 +143,11 @@ async function spendStars(request, env) {
   return Response.json({ entry, balance: balanceAfter }, { status: 201, headers: NO_STORE_HEADERS });
 }
 
-async function resetToday(env) {
-  requireRewardsConfig(env);
-  const { start, end } = shanghaiDayRange();
-  const [pages, recordPages] = await Promise.all([
-    queryAll(env.NOTION_LEDGER_DATABASE_ID, env, {
-    filter: {
-      and: [
-        { property: '类型', select: { equals: '获得' } },
-        { property: '时间', date: { on_or_after: start, before: end } },
-      ],
-    },
-    }),
-    getRecordPages(env),
-  ]);
-  const ledger = recordPages.map(mapLedgerEntry);
-  const resetStars = pages.reduce((sum, page) => sum + Number(page.properties?.['星星']?.number || 0), 0);
-  if (sumBalance(ledger) - resetStars < 0) {
-    return json({ error: '今天已有兑换记录，重置后余额会不足' }, 409);
-  }
-  await Promise.all(pages.map((page) => notion(`/pages/${page.id}`, env, {
+function updateTaskStatus(taskId, statusId, env) {
+  return notion(`/pages/${taskId}`, env, {
     method: 'PATCH',
-    body: JSON.stringify({ archived: true }),
-  })));
-  return Response.json({ removed: pages.length, balance: sumBalance(ledger) - resetStars }, { headers: NO_STORE_HEADERS });
+    body: JSON.stringify({ properties: { '状态': { status: { id: statusId } } } }),
+  });
 }
 
 async function createRecord(env, { title, type, stars, taskId, reason, balanceAfter }) {
@@ -235,14 +223,16 @@ function mapGift(page) {
   };
 }
 
-function mapTask(page) {
+function mapTask(page, env) {
   const properties = page.properties || {};
+  const status = properties['状态']?.status;
   return {
     id: page.id,
     name: plainText(properties['任务']?.title),
     stars: properties['星星']?.number || 0,
     reason: plainText(properties['说明']?.rich_text),
-    active: properties['启用']?.checkbox === true,
+    date: properties['日期']?.date?.start?.slice(0, 10) || '',
+    done: status?.id === env.NOTION_TASK_DONE_STATUS_ID || status?.name === 'Done',
     icon: mapIcon(page.icon),
   };
 }
@@ -293,6 +283,14 @@ function shanghaiDayRange(date = new Date()) {
   return { start: new Date(startMs).toISOString(), end: new Date(startMs + 86400000).toISOString() };
 }
 
+function shanghaiDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function titleProperty(value) {
   return { title: [{ type: 'text', text: { content: value } }] };
 }
@@ -318,7 +316,8 @@ function requireConfig(env, databaseId) {
 }
 
 function requireRewardsConfig(env) {
-  if (!env.NOTION_TOKEN || !env.NOTION_TASKS_DATABASE_ID || !env.NOTION_LEDGER_DATABASE_ID) {
+  if (!env.NOTION_TOKEN || !env.NOTION_TASKS_DATABASE_ID || !env.NOTION_LEDGER_DATABASE_ID ||
+      !env.NOTION_TASK_DONE_STATUS_ID) {
     throw new Error('Rewards databases are not configured');
   }
 }
