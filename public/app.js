@@ -5,6 +5,7 @@ let rewardsStatus = 'loading';
 let giftsStatus = 'loading';
 const AUDIO_ENABLED_KEY = 'childRewards.audio.enabled';
 const WELCOME_PLAYED_KEY = 'childRewards.audio.welcomeDate';
+const LIVE2D_POSITION_KEY = 'childRewards.live2d.position';
 const AUDIO_CLIPS = Object.freeze({
   welcomeStart: ['/audio/welcome-start-tasks.mp3', '/audio/welcome-new-day.mp3'],
   welcomeProgress: ['/audio/welcome-collect-stars.mp3'],
@@ -368,6 +369,140 @@ function toggleSound() {
   updateSoundButton();
 }
 
+async function setupLive2D() {
+  const widget = document.getElementById('live2dWidget');
+  const canvas = document.getElementById('live2dCanvas');
+  const Live2DModel = window.PIXI?.live2d?.Live2DModel;
+  if (!widget || !canvas || !window.PIXI || !Live2DModel) {
+    widget?.remove();
+    return;
+  }
+
+  try {
+    const app = new window.PIXI.Application({ view: canvas, transparent: true, antialias: true, autoStart: true });
+    const model = await Live2DModel.from('/live2d/wanko/Wanko.model3.json', { autoInteract: false });
+    app.stage.addChild(model);
+
+    const fitModel = () => {
+      const width = widget.clientWidth;
+      const height = widget.clientHeight;
+      app.renderer.resize(width, height);
+      model.scale.set(1);
+      const scale = Math.min(width / model.width, height / model.height) * 1.5;
+      model.scale.set(scale);
+      model.anchor.set(0.5, 0.5);
+      model.position.set(width / 2, height * 0.37);
+    };
+
+    fitModel();
+    restoreLive2DPosition(widget);
+    app.renderer.render(app.stage);
+    widget.classList.remove('is-loading');
+    setupLive2DDrag(widget, model);
+    model.motion('Idle', 0);
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      app.ticker.stop();
+      app.renderer.render(app.stage);
+    }
+
+    window.addEventListener('resize', () => {
+      fitModel();
+      keepLive2DInViewport(widget);
+    });
+  } catch (error) {
+    console.warn('Live2D helper could not load', error);
+    widget.remove();
+  }
+}
+
+function setupLive2DDrag(widget, model) {
+  let pointerId = null;
+  let startX = 0;
+  let startY = 0;
+  let originX = 0;
+  let originY = 0;
+  let dragged = false;
+
+  const interact = () => {
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) model.motion('TapBody');
+    playAudio(AUDIO_CLIPS.encourage);
+  };
+
+  widget.addEventListener('pointerdown', (event) => {
+    pointerId = event.pointerId;
+    const rect = widget.getBoundingClientRect();
+    startX = event.clientX;
+    startY = event.clientY;
+    originX = rect.left;
+    originY = rect.top;
+    dragged = false;
+    widget.setPointerCapture(pointerId);
+  });
+
+  widget.addEventListener('pointermove', (event) => {
+    if (event.pointerId !== pointerId) return;
+    const deltaX = event.clientX - startX;
+    const deltaY = event.clientY - startY;
+    if (!dragged && Math.hypot(deltaX, deltaY) < 6) return;
+    dragged = true;
+    widget.classList.add('is-dragging');
+    positionLive2D(widget, originX + deltaX, originY + deltaY);
+  });
+
+  const finishPointer = (event) => {
+    if (event.pointerId !== pointerId) return;
+    widget.releasePointerCapture(pointerId);
+    widget.classList.remove('is-dragging');
+    pointerId = null;
+    if (dragged) saveLive2DPosition(widget);
+    else {
+      interact();
+      widget.blur();
+    }
+  };
+
+  widget.addEventListener('pointerup', finishPointer);
+  widget.addEventListener('pointercancel', (event) => {
+    if (event.pointerId !== pointerId) return;
+    widget.classList.remove('is-dragging');
+    pointerId = null;
+  });
+  widget.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    interact();
+  });
+}
+
+function positionLive2D(widget, left, top) {
+  const maxLeft = Math.max(0, window.innerWidth - widget.offsetWidth);
+  const maxTop = Math.max(0, window.innerHeight - widget.offsetHeight);
+  widget.style.right = 'auto';
+  widget.style.bottom = 'auto';
+  widget.style.left = `${Math.min(maxLeft, Math.max(0, left))}px`;
+  widget.style.top = `${Math.min(maxTop, Math.max(0, top))}px`;
+}
+
+function saveLive2DPosition(widget) {
+  const rect = widget.getBoundingClientRect();
+  localStorage.setItem(LIVE2D_POSITION_KEY, JSON.stringify({ x: rect.left, y: rect.top }));
+}
+
+function restoreLive2DPosition(widget) {
+  try {
+    const position = JSON.parse(localStorage.getItem(LIVE2D_POSITION_KEY));
+    if (Number.isFinite(position?.x) && Number.isFinite(position?.y)) positionLive2D(widget, position.x, position.y);
+  } catch {
+    localStorage.removeItem(LIVE2D_POSITION_KEY);
+  }
+}
+
+function keepLive2DInViewport(widget) {
+  const rect = widget.getBoundingClientRect();
+  if (widget.style.left) positionLive2D(widget, rect.left, rect.top);
+}
+
 function celebrateEarn(stars, sourceRect) {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const jarRect = document.querySelector('.star-jar').getBoundingClientRect();
@@ -501,7 +636,7 @@ function setupEvents() {
   updateSoundButton();
   document.getElementById('soundToggle').addEventListener('click', toggleSound);
   document.addEventListener('pointerdown', (event) => {
-    if (!event.target.closest('#soundToggle')) playPendingWelcome();
+    if (!event.target.closest('#soundToggle, #live2dWidget')) playPendingWelcome();
   }, { capture: true });
   document.getElementById('refreshRewardsButton').addEventListener('click', () => loadRewards(true));
   document.getElementById('refreshGiftsButton').addEventListener('click', () => loadGifts(true));
@@ -535,5 +670,6 @@ function setupEvents() {
 }
 
 setupEvents();
+setupLive2D();
 render();
 Promise.all([loadRewards(), loadGifts()]);

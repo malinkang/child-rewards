@@ -144,4 +144,8 @@ MiniMax 生成的固定语音位于 `public/audio/`，不需要运行时 TTS API
 
 语音文字、文件名和用途见 [docs/audio.md](./docs/audio.md)。
 
+## Live2D Helper
+
+页面右下角的小助手使用 Live2D 官方免费示例模型 Wanko。点击会播放 `TapBody` 动作和已有的鼓励语音，拖动后会在浏览器本地保存位置。运行库和模型的许可证保存在 `public/live2d/licenses/`。
+
 更详细的 AI 修改约束和验证流程见 [AGENTS.md](./AGENTS.md)。
