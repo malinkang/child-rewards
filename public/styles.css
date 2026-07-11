@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "Star House";
+  src: url("./fonts/ZCOOLKuaiLe-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
 :root {
   --ink: #5c4752;
   --muted: #8d7581;
@@ -22,7 +30,7 @@ body {
   min-height: 100%;
   margin: 0;
   color: var(--ink);
-  font-family: "HanziPen SC", "Yuanti SC", "STYuanti-SC-Regular", "PingFang SC", sans-serif;
+  font-family: "Star House", "PingFang SC", sans-serif;
   background:
     linear-gradient(rgba(255,255,255,.72) 2px, transparent 2px),
     linear-gradient(90deg, rgba(255,255,255,.72) 2px, transparent 2px),
