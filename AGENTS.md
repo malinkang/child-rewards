@@ -35,8 +35,6 @@ Property names are exact API contracts. If a property is renamed in Notion, upda
 - `任务`: title
 - `星星`: number
 - `说明`: rich_text
-- `日期`: date
-- `状态`: status
 - `排序`: number
 - Page icon: emoji or Notion-hosted image
 
@@ -48,8 +46,15 @@ Property names are exact API contracts. If a property is renamed in Notion, upda
 - `任务`: relation to 每日任务
 - `说明`: rich_text
 - `时间`: date
-- `余额`: number snapshot
 - `媒体`: files
+- `余额统计`: relation to the singleton 余额统计 row
+
+### 余额统计
+
+- `统计`: title
+- `星星记录`: relation to 星星记录
+- `当前余额`: rollup sum of 星星记录.`星星`
+- The database contains exactly one active row titled `多乐的星星余额`.
 
 ### 甜心礼品屋
 
@@ -61,27 +66,25 @@ Property names are exact API contracts. If a property is renamed in Notion, upda
 - `说明`: rich_text
 - `排序`: number
 
-Database IDs and the Done Status option ID are configured through `wrangler.toml`. The API version is `2022-06-28` for database/page operations and `2025-09-03` for Notion file-upload operations.
+Database and singleton balance-page IDs are configured through `wrangler.toml`. The API version is `2022-06-28` for database/page operations and `2025-09-03` for Notion file-upload operations.
 
 ## Business Invariants
 
-- Beijing time (`Asia/Shanghai`) defines the current task date and duplicate-earn day boundary.
-- `/api/rewards` returns only tasks whose `日期` equals the current Beijing date.
-- A task is checked when its Notion `状态` matches `NOTION_TASK_DONE_STATUS_ID` or the status name is `Done`.
-- Completing a task creates one positive star record and then sets the task Status to Done.
-- If the Status update fails, archive the newly created star record as rollback.
-- Reject archived tasks, tasks from another database, non-current tasks, and duplicate daily earns.
-- Balance is the sum of all active signed `星星` records. Do not calculate authoritative balance in the browser.
-- Spending must validate the latest balance before uploading files or creating a negative record.
+- Tasks are permanent templates and do not have a date or completion Status.
+- Completing a task always creates one positive star record; the same task can be completed repeatedly on the same day.
+- Reject archived tasks and tasks from another database.
+- Every new ledger record must relate to `NOTION_BALANCE_PAGE_ID` through `余额统计`.
+- The authoritative balance is the singleton balance page's `当前余额` Rollup. Never sum ledger entries for balance in the Worker or browser.
+- Spending must validate the latest Rollup balance before uploading files or creating a negative record.
 - Spending media is optional, limited to 5 files, 20 MB per file, and image/video MIME types.
 - Media belongs in Notion file properties. Do not add browser `localStorage`, IndexedDB, R2, or repository assets for user uploads without explicit approval.
 - Keep write endpoints same-origin protected. This is a lightweight safeguard, not full user authentication.
 
 ## API Surface
 
-- `GET /api/rewards`: current Beijing-date tasks plus the complete active ledger and balance.
+- `GET /api/rewards`: permanent task templates plus the complete active ledger and Rollup balance.
 - `GET /api/gifts`: enabled gifts ordered by `排序` and creation time.
-- `POST /api/earn`: body `{ taskId }`; validates and completes a task.
+- `POST /api/earn`: body `{ taskId }`; validates the task and creates one earning record.
 - `POST /api/spend`: JSON without media or multipart form data with `item`, `stars`, and repeated `media` files.
 - Other `/api/*` routes return 404. Static requests fall through to `env.ASSETS`.
 
@@ -100,16 +103,16 @@ When adding an endpoint, update `README.md`, this file, and proportional tests i
 
 - Keep task cards driven entirely by `/api/rewards`; do not hardcode tasks in HTML or JavaScript.
 - Use the Notion page icon for each task, supporting both emoji and image icons.
-- Keep task completion derived from Notion Status, not ledger inference or local state after refresh.
+- Task cards show today's completion count derived from ledger entries and always retain an enabled “完成一次” action.
 - Preserve the two overview cards: 今日获得 and 本周获得.
 - History entries with media show a thumbnail and open the shared media viewer.
 - Gift media and reward-history media use the same viewer behavior.
 - Fixed voice clips live in `public/audio/`; do not add a runtime TTS dependency without explicit approval.
 - The draggable Live2D helper uses the official Wanko sample under Live2D's Free Material License. Runtime and model licenses live in `public/live2d/licenses/`.
 - Live2D runtime files are vendored in `public/vendor/`; do not replace them with third-party CDN URLs or unlicensed models.
-- Choose welcome audio only after `/api/rewards` resolves. Use task Status to select not-started, progress, or all-complete audio.
+- Choose welcome audio only after `/api/rewards` resolves. Use today's positive ledger entries to select not-started or in-progress audio.
 - Play welcome audio at most once per Beijing date. If autoplay is blocked, defer it until the first user gesture.
-- Completing the final task plays only the all-complete clip. Do not overlap it with a task-specific clip.
+- Each task completion may play its task-specific clip; there is no final-task state for repeatable tasks.
 - Preserve the sound toggle, 55% playback volume, and the user's `localStorage` preference.
 - Keep `docs/audio.md` synchronized when adding, replacing, or remapping voice clips.
 - Respect `prefers-reduced-motion` and keep desktop/mobile layouts free of horizontal overflow.
@@ -127,13 +130,13 @@ npm run check
 
 For local integration testing, run Wrangler with `.dev.vars`, then verify:
 
-- `/api/rewards` returns only today's Beijing-date tasks.
+- `/api/rewards` returns all active task templates and the singleton Rollup balance.
 - Notion emoji and image icons render.
-- Completing a temporary task persists Done after reload and prevents duplicate earning.
+- Completing the same temporary task twice creates two independent earning records and increments today's count twice.
 - Spending rejects insufficient balance.
 - A real small image upload appears in the star record and history viewer.
 - Audio assets return HTTP 200, the sound toggle persists, and state-specific clips are selected correctly.
-- Temporary Notion pages are archived by exact ID and the original balance is restored.
+- Temporary Notion pages are archived by exact ID, their balance relations disappear from the Rollup, and the original balance is restored.
 
 After deployment:
 

@@ -1,6 +1,7 @@
 let tasks = [];
 let ledger = [];
 let gifts = [];
+let balance = 0;
 let rewardsStatus = 'loading';
 let giftsStatus = 'loading';
 const AUDIO_ENABLED_KEY = 'childRewards.audio.enabled';
@@ -23,7 +24,7 @@ let pendingWelcome = '';
 let welcomeEvaluated = false;
 
 function getBalance() {
-  return ledger.reduce((sum, entry) => sum + Number(entry.stars || 0), 0);
+  return balance;
 }
 
 function getTodayEarned() {
@@ -40,15 +41,13 @@ function getWeekEarned() {
     .reduce((sum, entry) => sum + entry.stars, 0);
 }
 
-function hasTaskDoneToday(taskId) {
-  return tasks.some((task) => task.id === taskId && task.done);
+function getTaskCompletionsToday(taskId) {
+  const today = todayKey();
+  return ledger.filter((entry) =>
+    entry.type === 'earn' && entry.taskId === taskId && todayKey(new Date(entry.date)) === today).length;
 }
 
 async function earnTask(taskId, sourceElement) {
-  if (hasTaskDoneToday(taskId)) {
-    showToast('这个任务今天已经完成啦');
-    return;
-  }
   const task = tasks.find((candidate) => candidate.id === taskId);
   if (!task) return;
   const sourceRect = sourceElement.getBoundingClientRect();
@@ -56,7 +55,7 @@ async function earnTask(taskId, sourceElement) {
   try {
     const data = await postJson('/api/earn', { taskId });
     ledger.unshift(data.entry);
-    task.done = true;
+    balance = Number(data.balance || 0);
     render();
     celebrateEarn(task.stars, sourceRect);
     showToast(`+${task.stars} 颗星，已存入星星罐`);
@@ -114,19 +113,19 @@ function renderTasks() {
     return;
   }
   if (!tasks.length) {
-    grid.innerHTML = '<div class="empty">今天还没有任务。在 Notion 中添加任务并把“日期”设为今天，然后点击刷新。</div>';
+    grid.innerHTML = '<div class="empty">还没有任务。在 Notion 的任务表中添加任务后点击刷新。</div>';
     return;
   }
 
   grid.innerHTML = tasks.map((task) => {
-    const done = hasTaskDoneToday(task.id);
-    return `<button class="task-card ${done ? 'is-complete' : ''}" type="button" data-task-id="${task.id}" aria-pressed="${done}" ${done ? 'disabled' : ''}>
-      <span class="task-check" aria-hidden="true"><span>✓</span></span>
+    const completions = getTaskCompletionsToday(task.id);
+    return `<article class="task-card">
+      <span class="task-count">今日 ${completions} 次</span>
       <span class="task-icon">${renderTaskIcon(task.icon)}</span>
       <strong>${escapeHtml(task.name)}</strong>
-      <small>+${task.stars} 星</small>
-      ${done ? '<em class="done-label">已完成</em>' : ''}
-    </button>`;
+      <small>每次 +${task.stars} 星</small>
+      <button class="task-complete-button" type="button" data-task-id="${task.id}">完成一次</button>
+    </article>`;
   }).join('');
 
   grid.querySelectorAll('[data-task-id]').forEach((button) => {
@@ -257,6 +256,7 @@ async function loadRewards(showSuccess = false) {
     const data = await response.json();
     tasks = Array.isArray(data.tasks) ? data.tasks : [];
     ledger = Array.isArray(data.ledger) ? data.ledger : [];
+    balance = Number(data.balance || 0);
     rewardsStatus = 'ready';
     if (showSuccess) showToast('任务和星星记录已刷新');
     if (!showSuccess) maybePlayWelcome();
@@ -302,10 +302,6 @@ async function postJson(path, payload) {
 }
 
 function playTaskCompletionAudio(task) {
-  if (tasks.length && tasks.every((candidate) => candidate.done)) {
-    playAudio(AUDIO_CLIPS.allComplete);
-    return;
-  }
   if (/汉字|识字/.test(task.name)) {
     playAudio(AUDIO_CLIPS.chineseComplete);
   } else if (/英语|阅读|绘本|牛津/.test(task.name)) {
@@ -317,10 +313,7 @@ function maybePlayWelcome(force = false) {
   if ((!force && welcomeEvaluated) || !tasks.length) return;
   welcomeEvaluated = true;
   if (!soundEnabled || (!force && localStorage.getItem(WELCOME_PLAYED_KEY) === todayKey())) return;
-  const completed = tasks.filter((task) => task.done).length;
-  const clips = completed === tasks.length
-    ? AUDIO_CLIPS.allComplete
-    : completed === 0 ? AUDIO_CLIPS.welcomeStart : AUDIO_CLIPS.welcomeProgress;
+  const clips = getTodayEarned() === 0 ? AUDIO_CLIPS.welcomeStart : AUDIO_CLIPS.welcomeProgress;
   playAudio(clips, { welcome: true });
 }
 

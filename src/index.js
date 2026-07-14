@@ -55,19 +55,19 @@ async function getGifts(env) {
 
 async function getRewards(env) {
   requireRewardsConfig(env);
-  const [taskPages, recordPages] = await Promise.all([
+  const [taskPages, recordPages, balance] = await Promise.all([
     queryAll(env.NOTION_TASKS_DATABASE_ID, env, {
-      filter: { property: '日期', date: { equals: shanghaiDateKey() } },
       sorts: [
         { property: '排序', direction: 'ascending' },
         { timestamp: 'created_time', direction: 'ascending' },
       ],
     }),
     getRecordPages(env),
+    getBalance(env),
   ]);
-  const tasks = taskPages.map((page) => mapTask(page, env)).filter((task) => task.name && task.stars > 0);
+  const tasks = taskPages.map(mapTask).filter((task) => task.name && task.stars > 0);
   const ledger = recordPages.map(mapLedgerEntry);
-  return Response.json({ tasks, ledger, balance: sumBalance(ledger) }, { headers: NO_STORE_HEADERS });
+  return Response.json({ tasks, ledger, balance }, { headers: NO_STORE_HEADERS });
 }
 
 async function earnTask(request, env) {
@@ -81,43 +81,19 @@ async function earnTask(request, env) {
   if (taskPage.parent?.database_id?.replaceAll('-', '') !== env.NOTION_TASKS_DATABASE_ID.replaceAll('-', '')) {
     return json({ error: '任务无效' }, 400);
   }
-  const task = mapTask(taskPage, env);
-  if (task.date !== shanghaiDateKey() || task.stars < 1) return json({ error: '这不是今天的任务' }, 400);
-  if (task.done) return json({ error: '这个任务今天已经完成啦' }, 409);
+  const task = mapTask(taskPage);
+  if (task.stars < 1) return json({ error: '任务无效' }, 400);
 
-  const { start, end } = shanghaiDayRange();
-  const duplicate = await queryAll(env.NOTION_LEDGER_DATABASE_ID, env, {
-    filter: {
-      and: [
-        { property: '任务', relation: { contains: taskId } },
-        { property: '类型', select: { equals: '获得' } },
-        { property: '时间', date: { on_or_after: start, before: end } },
-      ],
-    },
-    page_size: 1,
-  });
-  if (duplicate.length) return json({ error: '这个任务今天已经完成啦' }, 409);
-
-  const ledger = (await getRecordPages(env)).map(mapLedgerEntry);
-  const balanceAfter = sumBalance(ledger) + task.stars;
+  const balanceBefore = await getBalance(env);
   const entry = await createRecord(env, {
     title: task.name,
     type: '获得',
     stars: task.stars,
     taskId,
     reason: task.reason,
-    balanceAfter,
   });
-  try {
-    await updateTaskStatus(taskId, env.NOTION_TASK_DONE_STATUS_ID, env);
-  } catch (error) {
-    await notion(`/pages/${entry.id}`, env, {
-      method: 'PATCH',
-      body: JSON.stringify({ archived: true }),
-    });
-    throw error;
-  }
-  return Response.json({ entry, balance: balanceAfter }, { status: 201, headers: NO_STORE_HEADERS });
+  const balance = await waitForBalance(env, balanceBefore + task.stars);
+  return Response.json({ entry, balance }, { status: 201, headers: NO_STORE_HEADERS });
 }
 
 async function spendStars(request, env) {
@@ -136,32 +112,23 @@ async function spendStars(request, env) {
     if (file.size > 20 * 1024 * 1024) return json({ error: '单个文件不能超过 20 MB' }, 400);
   }
 
-  const ledger = (await getRecordPages(env)).map(mapLedgerEntry);
-  const balance = sumBalance(ledger);
+  const balance = await getBalance(env);
   if (stars > balance) return json({ error: `星星还不够，还差 ${stars - balance} 颗` }, 409);
 
   const media = [];
   for (const file of body.files) media.push(await uploadNotionFile(file, env));
-  const balanceAfter = balance - stars;
   const entry = await createRecord(env, {
     title: `兑换：${item}`,
     type: '支出',
     stars: -stars,
     reason: item,
-    balanceAfter,
     media,
   });
-  return Response.json({ entry, balance: balanceAfter }, { status: 201, headers: NO_STORE_HEADERS });
+  const updatedBalance = await waitForBalance(env, balance - stars);
+  return Response.json({ entry, balance: updatedBalance }, { status: 201, headers: NO_STORE_HEADERS });
 }
 
-function updateTaskStatus(taskId, statusId, env) {
-  return notion(`/pages/${taskId}`, env, {
-    method: 'PATCH',
-    body: JSON.stringify({ properties: { '状态': { status: { id: statusId } } } }),
-  });
-}
-
-async function createRecord(env, { title, type, stars, taskId, reason, balanceAfter, media = [] }) {
+async function createRecord(env, { title, type, stars, taskId, reason, media = [] }) {
   const now = new Date().toISOString();
   const properties = {
     '记录': titleProperty(title),
@@ -169,7 +136,7 @@ async function createRecord(env, { title, type, stars, taskId, reason, balanceAf
     '星星': { number: stars },
     '说明': richTextProperty(reason),
     '时间': { date: { start: now } },
-    '余额': { number: balanceAfter },
+    '余额统计': { relation: [{ id: env.NOTION_BALANCE_PAGE_ID }] },
   };
   if (taskId) properties['任务'] = { relation: [{ id: taskId }] };
   if (media.length) properties['媒体'] = { files: media };
@@ -209,6 +176,24 @@ async function getRecordPages(env) {
       { timestamp: 'created_time', direction: 'descending' },
     ],
   });
+}
+
+async function getBalance(env) {
+  const page = await notion(`/pages/${env.NOTION_BALANCE_PAGE_ID}`, env);
+  if (page.archived || page.in_trash ||
+      page.parent?.database_id?.replaceAll('-', '') !== env.NOTION_BALANCE_DATABASE_ID.replaceAll('-', '')) {
+    throw new Error('Balance page is invalid');
+  }
+  return Number(page.properties?.['当前余额']?.rollup?.number || 0);
+}
+
+async function waitForBalance(env, expected) {
+  let balance = await getBalance(env);
+  for (let attempt = 0; attempt < 8 && balance !== expected; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    balance = await getBalance(env);
+  }
+  return balance;
 }
 
 async function queryAll(databaseId, env, query) {
@@ -257,16 +242,13 @@ function mapGift(page) {
   };
 }
 
-function mapTask(page, env) {
+function mapTask(page) {
   const properties = page.properties || {};
-  const status = properties['状态']?.status;
   return {
     id: page.id,
     name: plainText(properties['任务']?.title),
     stars: properties['星星']?.number || 0,
     reason: plainText(properties['说明']?.rich_text),
-    date: properties['日期']?.date?.start?.slice(0, 10) || '',
-    done: status?.id === env.NOTION_TASK_DONE_STATUS_ID || status?.name === 'Done',
     icon: mapIcon(page.icon),
   };
 }
@@ -281,7 +263,6 @@ function mapLedgerEntry(page) {
     reason: plainText(properties['说明']?.rich_text),
     stars: properties['星星']?.number || 0,
     taskId: properties['任务']?.relation?.[0]?.id || '',
-    balanceAfter: properties['余额']?.number || 0,
     date: properties['时间']?.date?.start || page.created_time,
     media: (properties['媒体']?.files || []).map(mapMedia).filter(Boolean),
   };
@@ -303,27 +284,6 @@ function mapMedia(file) {
     type: /\.(mp4|mov|m4v|webm|ogg)(?:$|\?)/i.test(name) ? 'video' : 'image',
     url,
   };
-}
-
-function sumBalance(ledger) {
-  return ledger.reduce((sum, entry) => sum + Number(entry.stars || 0), 0);
-}
-
-function shanghaiDayRange(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  const startMs = Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day)) - 8 * 60 * 60 * 1000;
-  return { start: new Date(startMs).toISOString(), end: new Date(startMs + 86400000).toISOString() };
-}
-
-function shanghaiDateKey(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function titleProperty(value) {
@@ -365,7 +325,7 @@ function requireConfig(env, databaseId) {
 
 function requireRewardsConfig(env) {
   if (!env.NOTION_TOKEN || !env.NOTION_TASKS_DATABASE_ID || !env.NOTION_LEDGER_DATABASE_ID ||
-      !env.NOTION_TASK_DONE_STATUS_ID) {
+      !env.NOTION_BALANCE_DATABASE_ID || !env.NOTION_BALANCE_PAGE_ID) {
     throw new Error('Rewards databases are not configured');
   }
 }

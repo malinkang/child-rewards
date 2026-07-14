@@ -15,6 +15,7 @@ Browser
             └─ Notion API
                  ├─ 每日任务
                  ├─ 星星记录
+                 ├─ 余额统计
                  └─ 甜心礼品屋
 ```
 
@@ -29,13 +30,11 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 | 属性 | 类型 | 用途 |
 | --- | --- | --- |
 | `任务` | Title | 任务名称 |
-| `星星` | Number | 完成后获得的星星 |
+| `星星` | Number | 每次完成后获得的星星 |
 | `说明` | Rich text | 任务说明及历史记录文案 |
-| `日期` | Date | 仅加载北京时间当天的任务 |
-| `状态` | Status | `Not started` / `Done`，保存任务对勾 |
 | `排序` | Number | 数字越小越靠前 |
 
-任务图标直接使用 Notion 页面的 icon，支持 emoji 和图片。
+任务是固定模板，始终展示；每次点击“完成一次”都会创建一条独立星星记录。任务图标直接使用 Notion 页面的 icon，支持 emoji 和图片。
 
 ### 星星记录
 
@@ -47,10 +46,20 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 | `任务` | Relation | 关联每日任务 |
 | `说明` | Rich text | 任务或兑换说明 |
 | `时间` | Date | 记录发生时间 |
-| `余额` | Number | 创建记录时的余额快照 |
 | `媒体` | Files | 兑换时拍摄的照片或视频 |
+| `余额统计` | Relation | 关联唯一余额统计行 |
 
-当前余额以所有有效记录的 `星星` 字段求和为准，不依赖 `余额` 快照。
+记录表不保存余额快照。
+
+### 余额统计
+
+| 属性 | 类型 | 用途 |
+| --- | --- | --- |
+| `统计` | Title | 唯一行标题 `多乐的星星余额` |
+| `星星记录` | Relation | 双向关联全部有效星星记录 |
+| `当前余额` | Rollup | 对星星记录的 `星星` 字段执行 Sum |
+
+任务、礼物进度和兑换校验均读取此 Rollup，不在 Worker 或浏览器中重新求和。
 
 ### 甜心礼品屋
 
@@ -68,9 +77,9 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/api/rewards` | 获取北京时间当天任务、星星记录和余额 |
+| `GET` | `/api/rewards` | 获取固定任务、星星记录和 Rollup 余额 |
 | `GET` | `/api/gifts` | 获取已启用礼品 |
-| `POST` | `/api/earn` | 完成当天任务、写入星星记录并更新 Status |
+| `POST` | `/api/earn` | 完成一次任务并写入一条星星记录 |
 | `POST` | `/api/spend` | 兑换礼品，可同时上传照片或视频 |
 
 写接口要求请求来源与 Worker 同源。Notion Token 只存在于 Worker Secret 中，不能放入前端代码、Git 或普通环境变量。
@@ -82,7 +91,8 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 - `NOTION_GIFTS_DATABASE_ID`
 - `NOTION_TASKS_DATABASE_ID`
 - `NOTION_LEDGER_DATABASE_ID`
-- `NOTION_TASK_DONE_STATUS_ID`
+- `NOTION_BALANCE_DATABASE_ID`
+- `NOTION_BALANCE_PAGE_ID`
 - `NOTION_VERSION`
 
 Secret：
@@ -118,16 +128,17 @@ curl https://child.malinkang.com/api/rewards
 curl https://child.malinkang.com/api/gifts
 ```
 
-再打开线上页面确认当天任务、余额、媒体预览和浏览器控制台。
+再打开线上页面确认固定任务、余额、媒体预览和浏览器控制台。
 
 ## Business Rules
 
 - 时区固定为 `Asia/Shanghai`。
-- 只显示 `日期` 为北京时间当天的任务。
-- 对勾以 Notion `状态` 为准，完成任务后写为 `Done`。
-- 同一任务同一天只能获得一次星星。
+- 任务表是固定模板，不使用日期或完成状态。
+- 同一任务每天可以完成任意多次，每次完成创建一条独立记录。
 - 归档任务不能继续获得星星。
-- 兑换前由 Worker 重新计算余额，余额不足时拒绝写入。
+- 每条新记录必须关联唯一余额统计行。
+- 余额只读取余额统计表的 `当前余额` Rollup。
+- 兑换前读取最新 Rollup，余额不足时拒绝写入。
 - 兑换媒体最多 5 个，单个文件最大 20 MB，仅支持图片和视频。
 - 媒体上传至 Notion，不存储在浏览器或 Cloudflare。
 
@@ -135,10 +146,10 @@ curl https://child.malinkang.com/api/gifts
 
 MiniMax 生成的固定语音位于 `public/audio/`，不需要运行时 TTS API：
 
-- 首次读取任务后，根据“未开始 / 部分完成 / 全部完成”选择欢迎语。
+- 首次读取任务后，根据今天是否已有获得记录选择“开始任务”或“继续收集星星”欢迎语。
 - 欢迎语每天最多主动播放一次；浏览器阻止自动播放时，延迟到用户第一次点击。
 - 完成汉字或阅读任务时播放对应语音。
-- 完成当天最后一个任务时只播放“全部完成”，避免连续播报。
+- 可重复任务没有“当天最后一个任务”状态，不播放全部完成语音。
 - 兑换成功和星星不足使用独立语音。
 - 声音开关保存在浏览器 `localStorage`，默认音量为 55%。
 

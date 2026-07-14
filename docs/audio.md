@@ -11,7 +11,7 @@ These clips were generated with the MiniMax `Explorative_Girl` voice on 2026-07-
 | `task-chinese-complete-2.mp3` | 汉字任务完成啦！多乐的星星罐里，又多了一颗闪闪的小星星！ | Chinese task completed, alternate |
 | `task-reading-complete-1.mp3` | 多乐认真读完了两本英语绘本，奖励两颗小星星！ | Reading task completed |
 | `task-reading-complete-2.mp3` | 英语阅读完成啦！一颗、两颗，两颗星星都飞进星星罐啦！ | Reading task completed, alternate |
-| `all-tasks-complete.mp3` | 今天的小目标全部完成！现在可以开心地看看星星罐啦！ | All tasks completed |
+| `all-tasks-complete.mp3` | 今天的小目标全部完成！现在可以开心地看看星星罐啦！ | Reserved; repeatable tasks no longer have an all-complete state |
 | `not-enough-stars.mp3` | 还差一点点就能兑换礼物啦。没关系，我们慢慢收集。 | Spend rejected for insufficient balance |
 | `reward-redeemed-1.mp3` | 心愿兑换成功啦！这是多乐认真完成任务得到的礼物。 | Redemption succeeded |
 | `reward-redeemed-2.mp3` | 恭喜多乐！小星星变成喜欢的礼物啦！ | Redemption succeeded, alternate |
