@@ -1,1 +1,3 @@
 NOTION_TOKEN=your_local_integration_token
+AUTH_PIN=your_parent_pin
+AUTH_SECRET=generate_a_long_random_secret

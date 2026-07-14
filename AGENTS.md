@@ -16,7 +16,7 @@ This repository is a personal child-rewards application deployed at `https://chi
 - `public/app.js`: browser state, rendering, interactions, and calls to `/api/*`.
 - `src/index.js`: Cloudflare Worker router, validation, Notion reads/writes, media uploads, and static asset fallback.
 - `wrangler.toml`: Worker deployment, custom domain, and non-secret Notion identifiers.
-- `NOTION_TOKEN`: Cloudflare Secret only. Never write it to files, output, frontend code, commits, or logs.
+- `NOTION_TOKEN`, `AUTH_PIN`, and `AUTH_SECRET`: Cloudflare Secrets only. Never write them to files, output, frontend code, commits, or logs.
 
 Data flow:
 
@@ -78,14 +78,19 @@ Database and singleton balance-page IDs are configured through `wrangler.toml`. 
 - Spending must validate the latest Rollup balance before uploading files or creating a negative record.
 - Spending media is optional, limited to 5 files, 20 MB per file, and image/video MIME types.
 - Media belongs in Notion file properties. Do not add browser `localStorage`, IndexedDB, R2, or repository assets for user uploads without explicit approval.
-- Keep write endpoints same-origin protected. This is a lightweight safeguard, not full user authentication.
+- Keep all write endpoints same-origin protected and require a valid signed device cookie.
+- Device authorization lasts 30 days. Gift redemption additionally requires the current parent PIN on every attempt.
+- Keep PIN comparison timing-safe, throttle failed PIN attempts, and enforce a short server-side write cooldown.
 
 ## API Surface
 
 - `GET /api/rewards`: permanent task templates plus the complete active ledger and Rollup balance.
 - `GET /api/gifts`: enabled gifts ordered by `排序` and creation time.
+- `GET /api/auth`: returns whether the current device has a valid signed authorization cookie.
+- `POST /api/auth/login`: validates the parent PIN and issues the 30-day HttpOnly cookie.
+- `POST /api/auth/logout`: expires the authorization cookie.
 - `POST /api/earn`: body `{ taskId }`; validates the task and creates one earning record.
-- `POST /api/spend`: JSON without media or multipart form data with `item`, `stars`, and repeated `media` files.
+- `POST /api/spend`: JSON without media or multipart form data with `item`, `stars`, `pin`, and repeated `media` files.
 - Other `/api/*` routes return 404. Static requests fall through to `env.ASSETS`.
 
 When adding an endpoint, update `README.md`, this file, and proportional tests in the same change.
@@ -107,6 +112,7 @@ When adding an endpoint, update `README.md`, this file, and proportional tests i
 - Preserve the two overview cards: 今日获得 and 本周获得.
 - History entries with media show a thumbnail and open the shared media viewer.
 - Gift media and reward-history media use the same viewer behavior.
+- Locked devices may read data but must show locked task and redemption actions. Never treat frontend state as authorization.
 - Fixed voice clips live in `public/audio/`; do not add a runtime TTS dependency without explicit approval.
 - Choose welcome audio only after `/api/rewards` resolves. Use today's positive ledger entries to select not-started or in-progress audio.
 - Play welcome audio at most once per Beijing date. If autoplay is blocked, defer it until the first user gesture.

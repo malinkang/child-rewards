@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>多乐的星星屋</title>
   <link rel="preload" href="./fonts/ZCOOLKuaiLe-Regular.ttf" as="font" type="font/ttf" crossorigin />
-  <link rel="stylesheet" href="./styles.css?v=20260714-repeatable-tasks" />
+  <link rel="stylesheet" href="./styles.css?v=20260714-parent-lock" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -22,7 +22,10 @@
       <section class="hero-copy">
         <div class="hero-topline">
           <p class="eyebrow">Sweet Star House</p>
-          <button id="soundToggle" class="sound-toggle" type="button" aria-label="关闭声音" title="关闭声音"><span id="soundIcon" aria-hidden="true">🔊</span></button>
+          <div class="hero-controls">
+            <button id="authButton" class="auth-toggle" type="button" aria-label="解锁此设备" title="解锁此设备"><span id="authIcon" aria-hidden="true">🔒</span></button>
+            <button id="soundToggle" class="sound-toggle" type="button" aria-label="关闭声音" title="关闭声音"><span id="soundIcon" aria-hidden="true">🔊</span></button>
+          </div>
         </div>
         <h1>多乐的星星屋</h1>
         <p class="subtitle">把今天的小努力，装进软乎乎的星星罐。认真学习、开心阅读，每一颗都闪闪发光。</p>
@@ -125,7 +128,26 @@
     </div>
   </dialog>
 
+  <dialog id="pinDialog" class="app-dialog pin-dialog">
+    <form id="pinForm" class="dialog-card pin-card">
+      <div class="pin-heading">
+        <span class="pin-lock" aria-hidden="true">🔐</span>
+        <div>
+          <p class="eyebrow">Parent Check</p>
+          <h2 id="pinDialogTitle">家长解锁</h2>
+        </div>
+      </div>
+      <p id="pinDialogHint" class="pin-hint">输入家长 PIN，授权这台设备使用 30 天。</p>
+      <label>家长 PIN<input id="pinInput" name="pin" type="password" inputmode="numeric" autocomplete="one-time-code" minlength="4" maxlength="12" pattern="[0-9]*" required /></label>
+      <p id="pinError" class="pin-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button id="cancelPinButton" class="subtle-button" type="button">取消</button>
+        <button id="confirmPinButton" type="submit">确认</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="./app.js?v=20260714-helper-removed" type="module"></script>
+  <script src="./app.js?v=20260714-parent-lock" type="module"></script>
 </body>
 </html>

@@ -2,6 +2,10 @@ const NOTION_API = 'https://api.notion.com/v1';
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 const NO_STORE_HEADERS = { ...JSON_HEADERS, 'Cache-Control': 'no-store' };
 const GIFT_HEADERS = { ...JSON_HEADERS, 'Cache-Control': 'public, max-age=60, s-maxage=60' };
+const AUTH_COOKIE = 'child_rewards_auth';
+const AUTH_MAX_AGE = 30 * 24 * 60 * 60;
+const failedLogins = new Map();
+const recentWrites = new Map();
 
 export default {
   async fetch(request, env) {
@@ -14,11 +18,20 @@ export default {
       if (url.pathname === '/api/rewards' && request.method === 'GET') {
         return getRewards(env);
       }
+      if (url.pathname === '/api/auth' && request.method === 'GET') {
+        return getAuthStatus(request, env);
+      }
+      if (url.pathname === '/api/auth/login' && request.method === 'POST') {
+        return handleWrite(request, () => login(request, env));
+      }
+      if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
+        return handleWrite(request, () => logout());
+      }
       if (url.pathname === '/api/earn' && request.method === 'POST') {
-        return handleWrite(request, () => earnTask(request, env));
+        return handleWrite(request, () => requireAuthorizedWrite(request, env, () => earnTask(request, env)));
       }
       if (url.pathname === '/api/spend' && request.method === 'POST') {
-        return handleWrite(request, () => spendStars(request, env));
+        return handleWrite(request, () => requireAuthorizedWrite(request, env, () => spendStars(request, env)));
       }
       if (url.pathname.startsWith('/api/')) {
         return json({ error: 'Not found' }, 404);
@@ -36,6 +49,51 @@ async function handleWrite(request, action) {
   if (origin !== new URL(request.url).origin) {
     return json({ error: 'Forbidden' }, 403);
   }
+  return action();
+}
+
+async function getAuthStatus(request, env) {
+  requireAuthConfig(env);
+  return json({ authenticated: await isAuthorized(request, env) });
+}
+
+async function login(request, env) {
+  requireAuthConfig(env);
+  const clientKey = request.headers.get('CF-Connecting-IP') || 'unknown';
+  if (isLoginBlocked(clientKey)) return json({ error: '尝试次数太多，请 15 分钟后再试', code: 'RATE_LIMITED' }, 429);
+  const body = await readJson(request);
+  if (!await pinMatches(body.pin, env)) {
+    recordLoginFailure(clientKey);
+    return json({ error: '家长 PIN 不正确', code: 'PIN_INVALID' }, 401);
+  }
+  failedLogins.delete(clientKey);
+  const cookie = await createAuthCookie(env);
+  return Response.json({ authenticated: true }, {
+    headers: { ...NO_STORE_HEADERS, 'Set-Cookie': cookie },
+  });
+}
+
+function logout() {
+  return Response.json({ authenticated: false }, {
+    headers: {
+      ...NO_STORE_HEADERS,
+      'Set-Cookie': `${AUTH_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`,
+    },
+  });
+}
+
+async function requireAuthorizedWrite(request, env, action) {
+  requireAuthConfig(env);
+  if (!await isAuthorized(request, env)) {
+    return json({ error: '请先输入家长 PIN 解锁', code: 'AUTH_REQUIRED' }, 401);
+  }
+  const clientKey = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const now = Date.now();
+  if (now - (recentWrites.get(clientKey) || 0) < 2000) {
+    return json({ error: '操作太快啦，请稍等一下', code: 'TOO_FAST' }, 429);
+  }
+  recentWrites.set(clientKey, now);
+  trimTimestampMap(recentWrites, now - 60_000);
   return action();
 }
 
@@ -101,6 +159,13 @@ async function spendStars(request, env) {
   const body = await readSpendRequest(request);
   const item = typeof body.item === 'string' ? body.item.trim().slice(0, 120) : '';
   const stars = Number(body.stars);
+  const pinKey = `spend:${request.headers.get('CF-Connecting-IP') || 'unknown'}`;
+  if (isLoginBlocked(pinKey)) return json({ error: '尝试次数太多，请 15 分钟后再试', code: 'RATE_LIMITED' }, 429);
+  if (!await pinMatches(body.pin, env)) {
+    recordLoginFailure(pinKey);
+    return json({ error: '兑换需要正确的家长 PIN', code: 'PIN_INVALID' }, 401);
+  }
+  failedLogins.delete(pinKey);
   if (!item || !Number.isInteger(stars) || stars < 1 || stars > 10000) {
     return json({ error: '兑换内容或星星数量无效' }, 400);
   }
@@ -312,6 +377,7 @@ async function readSpendRequest(request) {
     return {
       item: form.get('item'),
       stars: form.get('stars'),
+      pin: form.get('pin'),
       files: form.getAll('media').filter((value) => value instanceof File && value.size > 0),
     };
   }
@@ -328,6 +394,84 @@ function requireRewardsConfig(env) {
       !env.NOTION_BALANCE_DATABASE_ID || !env.NOTION_BALANCE_PAGE_ID) {
     throw new Error('Rewards databases are not configured');
   }
+}
+
+function requireAuthConfig(env) {
+  if (!env.AUTH_PIN || !env.AUTH_SECRET) throw new Error('Authentication is not configured');
+}
+
+async function pinMatches(value, env) {
+  const supplied = typeof value === 'string' ? value.trim() : '';
+  const [actual, expected] = await Promise.all([sha256(supplied), sha256(env.AUTH_PIN)]);
+  return timingSafeEqual(actual, expected);
+}
+
+async function createAuthCookie(env) {
+  const expires = Math.floor(Date.now() / 1000) + AUTH_MAX_AGE;
+  const payload = `v1.${expires}`;
+  const signature = await sign(payload, env.AUTH_SECRET);
+  return `${AUTH_COOKIE}=${payload}.${signature}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${AUTH_MAX_AGE}`;
+}
+
+async function isAuthorized(request, env) {
+  const value = readCookie(request, AUTH_COOKIE);
+  const match = /^v1\.(\d+)\.([A-Za-z0-9_-]+)$/.exec(value);
+  if (!match || Number(match[1]) <= Math.floor(Date.now() / 1000)) return false;
+  const payload = `v1.${match[1]}`;
+  return timingSafeEqual(await sign(payload, env.AUTH_SECRET), match[2]);
+}
+
+function readCookie(request, name) {
+  const prefix = `${name}=`;
+  return (request.headers.get('Cookie') || '').split(';').map((part) => part.trim())
+    .find((part) => part.startsWith(prefix))?.slice(prefix.length) || '';
+}
+
+async function sign(value, secret) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const bytes = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value)));
+  return base64Url(bytes);
+}
+
+async function sha256(value) {
+  return new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
+}
+
+function base64Url(bytes) {
+  let value = '';
+  for (const byte of bytes) value += String.fromCharCode(byte);
+  return btoa(value).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
+}
+
+function timingSafeEqual(left, right) {
+  const a = typeof left === 'string' ? new TextEncoder().encode(left) : left;
+  const b = typeof right === 'string' ? new TextEncoder().encode(right) : right;
+  let difference = a.length ^ b.length;
+  const length = Math.max(a.length, b.length);
+  for (let index = 0; index < length; index += 1) difference |= (a[index % a.length] || 0) ^ (b[index % b.length] || 0);
+  return difference === 0;
+}
+
+function isLoginBlocked(key) {
+  const entry = failedLogins.get(key);
+  if (!entry || entry.resetAt <= Date.now()) return false;
+  return entry.count >= 5;
+}
+
+function recordLoginFailure(key) {
+  const now = Date.now();
+  const current = failedLogins.get(key);
+  const entry = !current || current.resetAt <= now
+    ? { count: 1, resetAt: now + 15 * 60_000 }
+    : { ...current, count: current.count + 1 };
+  failedLogins.set(key, entry);
+  trimTimestampMap(failedLogins, now, (value) => value.resetAt);
+}
+
+function trimTimestampMap(map, threshold, getTimestamp = (value) => value) {
+  if (map.size < 500) return;
+  for (const [key, value] of map) if (getTimestamp(value) < threshold) map.delete(key);
 }
 
 function isNotionId(value) {

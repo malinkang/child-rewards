@@ -2,6 +2,8 @@ let tasks = [];
 let ledger = [];
 let gifts = [];
 let balance = 0;
+let authorized = false;
+let authLoaded = false;
 let rewardsStatus = 'loading';
 let giftsStatus = 'loading';
 const AUDIO_ENABLED_KEY = 'childRewards.audio.enabled';
@@ -21,6 +23,7 @@ let soundEnabled = localStorage.getItem(AUDIO_ENABLED_KEY) !== 'false';
 let activeAudio = null;
 let pendingWelcome = '';
 let welcomeEvaluated = false;
+let pinRequest = null;
 
 function getBalance() {
   return balance;
@@ -49,8 +52,10 @@ function getTaskCompletionsToday(taskId) {
 async function earnTask(taskId, sourceElement) {
   const task = tasks.find((candidate) => candidate.id === taskId);
   if (!task) return;
-  const sourceRect = sourceElement.getBoundingClientRect();
-  sourceElement.disabled = true;
+  if (!await ensureAuthorized()) return;
+  const activeButton = document.querySelector(`[data-task-id="${CSS.escape(taskId)}"]`);
+  const sourceRect = (activeButton || sourceElement).getBoundingClientRect();
+  if (activeButton) activeButton.disabled = true;
   try {
     const data = await postJson('/api/earn', { taskId });
     ledger.unshift(data.entry);
@@ -60,29 +65,39 @@ async function earnTask(taskId, sourceElement) {
     showToast(`+${task.stars} 颗星，已存入星星罐`);
     playTaskCompletionAudio(task);
   } catch (error) {
+    handleAuthError(error);
     showToast(error.message);
     await loadRewards();
   }
 }
 
 async function spend(item, stars, files = []) {
+  if (!await ensureAuthorized()) return false;
+  const pin = await requestPin('spend');
+  if (!pin) return false;
   try {
     if (files.length) {
       const form = new FormData();
       form.append('item', item);
       form.append('stars', String(stars));
+      form.append('pin', pin);
       files.forEach((file) => form.append('media', file));
       const response = await fetch('/api/spend', { method: 'POST', body: form });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || '兑换记录保存失败');
+      if (!response.ok) {
+        const error = new Error(data.error || '兑换记录保存失败');
+        error.code = data.code || '';
+        throw error;
+      }
     } else {
-      await postJson('/api/spend', { item, stars });
+      await postJson('/api/spend', { item, stars, pin });
     }
     await loadRewards();
     showToast('兑换已记录到 Notion');
     playAudio(AUDIO_CLIPS.rewardRedeemed);
     return true;
   } catch (error) {
+    handleAuthError(error);
     showToast(error.message);
     if (error.message.includes('还差')) playAudio(AUDIO_CLIPS.notEnoughStars);
     return false;
@@ -123,7 +138,7 @@ function renderTasks() {
       <span class="task-icon">${renderTaskIcon(task.icon)}</span>
       <strong>${escapeHtml(task.name)}</strong>
       <small>每次 +${task.stars} 星</small>
-      <button class="task-complete-button" type="button" data-task-id="${task.id}">完成一次</button>
+      <button class="task-complete-button" type="button" data-task-id="${task.id}">${authorized ? '完成一次' : '🔒 完成一次'}</button>
     </article>`;
   }).join('');
 
@@ -175,7 +190,7 @@ function renderShop(balance) {
       </div>
       <div class="shop-actions">
         <div class="shop-price">${item.cost} ⭐</div>
-        <button class="redeem-button" data-shop-id="${item.id}" type="button" ${ready ? '' : 'disabled'}>兑换</button>
+        <button class="redeem-button" data-shop-id="${item.id}" type="button" ${ready ? '' : 'disabled'}>${authorized ? '兑换' : '🔒 兑换'}</button>
       </div>
     </div>`;
   }).join('');
@@ -296,8 +311,113 @@ async function postJson(path, payload) {
     body: JSON.stringify(payload),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || '操作失败，请稍后再试');
+  if (!response.ok) {
+    const error = new Error(data.error || '操作失败，请稍后再试');
+    error.code = data.code || '';
+    throw error;
+  }
   return data;
+}
+
+async function loadAuth() {
+  try {
+    const response = await fetch('/api/auth', { cache: 'no-store' });
+    const data = await response.json();
+    authorized = response.ok && data.authenticated === true;
+  } catch {
+    authorized = false;
+  } finally {
+    authLoaded = true;
+    updateAuthButton();
+    render();
+  }
+}
+
+async function ensureAuthorized() {
+  if (authorized) return true;
+  return Boolean(await requestPin('unlock'));
+}
+
+function requestPin(mode) {
+  if (pinRequest) return Promise.resolve(null);
+  const dialog = document.getElementById('pinDialog');
+  document.getElementById('pinDialogTitle').textContent = mode === 'unlock' ? '家长解锁' : '确认兑换';
+  document.getElementById('pinDialogHint').textContent = mode === 'unlock'
+    ? '输入家长 PIN，授权这台设备使用 30 天。'
+    : '兑换礼物需要家长再次确认。';
+  document.getElementById('pinError').textContent = '';
+  document.getElementById('pinForm').reset();
+  dialog.showModal();
+  window.setTimeout(() => document.getElementById('pinInput').focus(), 50);
+  return new Promise((resolve) => { pinRequest = { mode, resolve }; });
+}
+
+function finishPinRequest(result) {
+  if (!pinRequest) return;
+  const { resolve } = pinRequest;
+  pinRequest = null;
+  document.getElementById('pinDialog').close();
+  resolve(result);
+}
+
+async function submitPin(event) {
+  event.preventDefault();
+  if (!pinRequest) return;
+  const pin = document.getElementById('pinInput').value.trim();
+  const button = document.getElementById('confirmPinButton');
+  const errorElement = document.getElementById('pinError');
+  if (pinRequest.mode === 'spend') {
+    finishPinRequest(pin);
+    return;
+  }
+  button.disabled = true;
+  errorElement.textContent = '';
+  try {
+    await postJson('/api/auth/login', { pin });
+    authorized = true;
+    authLoaded = true;
+    updateAuthButton();
+    render();
+    finishPinRequest(true);
+    showToast('这台设备已解锁');
+  } catch (error) {
+    errorElement.textContent = error.message;
+    document.getElementById('pinInput').select();
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function toggleAuthorization() {
+  if (!authorized) {
+    await ensureAuthorized();
+    return;
+  }
+  try {
+    await postJson('/api/auth/logout', {});
+    authorized = false;
+    updateAuthButton();
+    render();
+    showToast('这台设备已锁定');
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+function updateAuthButton() {
+  const button = document.getElementById('authButton');
+  const label = !authLoaded ? '正在检查设备权限' : authorized ? '锁定此设备' : '解锁此设备';
+  document.getElementById('authIcon').textContent = authorized ? '🔓' : '🔒';
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.setAttribute('aria-pressed', String(authorized));
+}
+
+function handleAuthError(error) {
+  if (error.code !== 'AUTH_REQUIRED') return;
+  authorized = false;
+  updateAuthButton();
+  render();
 }
 
 function playTaskCompletionAudio(task) {
@@ -492,6 +612,8 @@ function showToast(message) {
 
 function setupEvents() {
   updateSoundButton();
+  updateAuthButton();
+  document.getElementById('authButton').addEventListener('click', toggleAuthorization);
   document.getElementById('soundToggle').addEventListener('click', toggleSound);
   document.addEventListener('pointerdown', (event) => {
     if (!event.target.closest('#soundToggle')) playPendingWelcome();
@@ -525,8 +647,16 @@ function setupEvents() {
   mediaDialog.addEventListener('click', (event) => {
     if (event.target === mediaDialog) closeMediaViewer();
   });
+
+  const pinDialog = document.getElementById('pinDialog');
+  document.getElementById('pinForm').addEventListener('submit', submitPin);
+  document.getElementById('cancelPinButton').addEventListener('click', () => finishPinRequest(null));
+  pinDialog.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    finishPinRequest(null);
+  });
 }
 
 setupEvents();
 render();
-Promise.all([loadRewards(), loadGifts()]);
+Promise.all([loadAuth(), loadRewards(), loadGifts()]);

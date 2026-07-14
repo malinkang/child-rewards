@@ -79,10 +79,13 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 | --- | --- | --- |
 | `GET` | `/api/rewards` | 获取固定任务、星星记录和 Rollup 余额 |
 | `GET` | `/api/gifts` | 获取已启用礼品 |
+| `GET` | `/api/auth` | 获取当前设备授权状态 |
+| `POST` | `/api/auth/login` | 使用家长 PIN 授权当前设备 30 天 |
+| `POST` | `/api/auth/logout` | 锁定当前设备 |
 | `POST` | `/api/earn` | 完成一次任务并写入一条星星记录 |
-| `POST` | `/api/spend` | 兑换礼品，可同时上传照片或视频 |
+| `POST` | `/api/spend` | 使用家长 PIN 兑换礼品，可同时上传照片或视频 |
 
-写接口要求请求来源与 Worker 同源。Notion Token 只存在于 Worker Secret 中，不能放入前端代码、Git 或普通环境变量。
+写接口要求请求来源与 Worker 同源，并且必须携带 Worker 签发的设备授权 Cookie。兑换还会再次校验当次提交的家长 PIN。
 
 ## Environment
 
@@ -98,6 +101,8 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 Secret：
 
 - `NOTION_TOKEN`
+- `AUTH_PIN`
+- `AUTH_SECRET`
 
 ## Development
 
@@ -118,6 +123,8 @@ npm run check
 
 ```bash
 npx wrangler secret put NOTION_TOKEN
+npx wrangler secret put AUTH_PIN
+npx wrangler secret put AUTH_SECRET
 npm run deploy
 ```
 
@@ -135,6 +142,9 @@ curl https://child.malinkang.com/api/gifts
 - 时区固定为 `Asia/Shanghai`。
 - 任务表是固定模板，不使用日期或完成状态。
 - 同一任务每天可以完成任意多次，每次完成创建一条独立记录。
+- 新设备必须通过家长 PIN 授权，签名 Cookie 有效期为 30 天。
+- 所有写入要求已授权，兑换礼物每次都要重新输入家长 PIN。
+- 同一来源的写入操作至少间隔 2 秒；PIN 连续错误 5 次后暂时锁定 15 分钟。
 - 归档任务不能继续获得星星。
 - 每条新记录必须关联唯一余额统计行。
 - 余额只读取余额统计表的 `当前余额` Rollup。
