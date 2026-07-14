@@ -275,13 +275,6 @@ input[type="file"] { padding: 9px; background: white; }
 input[type="file"]::file-selector-button { margin-right: 10px; border: 0; border-radius: 12px; background: var(--blue-soft); color: var(--ink); padding: 8px 12px; font-weight: 900; cursor: pointer; }
 .toast { position: fixed; left: 50%; bottom: 24px; z-index: 5; transform: translateX(-50%) translateY(120px); border: 4px solid white; border-radius: 999px; background: var(--pink-deep); color: white; padding: 12px 17px; font-weight: 900; box-shadow: var(--shadow); transition: transform 200ms ease; }
 .toast.show { transform: translateX(-50%) translateY(0); }
-.live2d-widget { position: fixed; right: 14px; bottom: 10px; z-index: 4; width: 210px; height: 250px; cursor: grab; touch-action: none; user-select: none; filter: drop-shadow(0 12px 9px rgba(126,77,101,.16)); opacity: 1; transition: opacity 220ms ease, filter 180ms ease; }
-.live2d-widget:hover { filter: drop-shadow(0 15px 11px rgba(126,77,101,.22)); }
-.live2d-widget:active { cursor: grabbing; }
-.live2d-widget:focus-visible { outline: 4px solid rgba(105,189,218,.65); outline-offset: 2px; border-radius: 44% 44% 36% 36%; }
-.live2d-widget.is-loading { opacity: 0; pointer-events: none; }
-.live2d-widget.is-dragging { filter: drop-shadow(0 18px 12px rgba(126,77,101,.24)); }
-.live2d-widget canvas { display: block; width: 100%; height: 100%; pointer-events: none; }
 .flying-star { position: fixed; z-index: 20; color: var(--pink); font-size: 30px; font-weight: 900; pointer-events: none; text-shadow: 0 3px 0 white; }
 .flying-star:nth-of-type(2n) { color: var(--yellow); }
 .flying-star:nth-of-type(3n) { color: var(--blue); }
@@ -306,7 +299,6 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 0; border
   .inline-form { grid-template-columns: 1fr; }
   .panel { padding: 18px; border-radius: 24px; }
   .panel-heading { align-items: flex-start; }
-  .live2d-widget { width: 158px; height: 190px; right: 6px; bottom: 5px; }
 }
 
 @media (max-width: 470px) {
@@ -320,5 +312,4 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 0; border
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
   .jar-star { opacity: .76; }
-  .live2d-widget { transition: none; }
 }

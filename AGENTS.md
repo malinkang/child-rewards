@@ -108,8 +108,6 @@ When adding an endpoint, update `README.md`, this file, and proportional tests i
 - History entries with media show a thumbnail and open the shared media viewer.
 - Gift media and reward-history media use the same viewer behavior.
 - Fixed voice clips live in `public/audio/`; do not add a runtime TTS dependency without explicit approval.
-- The draggable Live2D helper uses the official Wanko sample under Live2D's Free Material License. Runtime and model licenses live in `public/live2d/licenses/`.
-- Live2D runtime files are vendored in `public/vendor/`; do not replace them with third-party CDN URLs or unlicensed models.
 - Choose welcome audio only after `/api/rewards` resolves. Use today's positive ledger entries to select not-started or in-progress audio.
 - Play welcome audio at most once per Beijing date. If autoplay is blocked, defer it until the first user gesture.
 - Each task completion may play its task-specific clip; there is no final-task state for repeatable tasks.
