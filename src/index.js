@@ -248,7 +248,7 @@ async function updateClassRecord(request, env, recordId) {
 function classRecordProperties(body, course) {
   return {
     '记录': titleProperty(`${course.name} - ${body.start.slice(0, 10)}`),
-    '课程': { relation: [{ id: coursePage.id }] },
+    '课程': { relation: [{ id: course.id }] },
     '上课时间': { date: { start: body.start, ...(body.end ? { end: body.end } : {}) } },
     '状态': { status: { name: body.status } },
     '时长': body.duration ? { number: body.duration } : { number: null },

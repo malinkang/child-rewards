@@ -48,7 +48,6 @@
           <label class="media-button">🖼️ 从相册选择<input id="galleryInput" type="file" accept="image/*,video/*" multiple /></label>
         </div>
         <div id="selectedMedia" class="selected-media"></div>
-        <div id="overallUpload" class="overall-upload" hidden><span>总进度</span><progress value="0" max="100"></progress><strong>0%</strong></div>
       </section>
       <p id="recordError" class="form-error" role="alert"></p>
       <footer class="dialog-actions"><button id="cancelRecordButton" class="secondary-command" type="button">取消</button><button id="saveRecordButton" class="primary-command" type="submit">保存记录</button></footer>
@@ -68,6 +67,6 @@
     <div class="media-view-card"><header><h2 id="mediaTitle">课堂回忆</h2><span id="mediaPosition" class="media-position"></span><button id="closeMediaButton" class="round-close" type="button" aria-label="关闭">×</button></header><div class="media-stage"><button id="previousMediaButton" class="media-arrow previous" type="button" aria-label="上一张">‹</button><div id="mediaViewer"></div><button id="nextMediaButton" class="media-arrow next" type="button" aria-label="下一张">›</button></div></div>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="./classes.js?v=20260717-record-edit" type="module"></script>
+  <script src="./classes.js?v=20260717-time-sync-v2" type="module"></script>
 </body>
 </html>

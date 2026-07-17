@@ -2,6 +2,7 @@ import { mountSharedNav } from './shared-nav.js';
 
 const VALID_STATUSES = ['全部', '已完成', '计划中', '试听', '请假', '取消'];
 const COLOR_MAP = { '粉色': '#f58fb1', '蓝色': '#69bdda', '黄色': '#f2be39', '薄荷绿': '#70c9b0', '紫色': '#a98ad4' };
+const COURSE_DEFAULT_DURATIONS = { '体能': 90, '跳舞': 50, '英语': 45 };
 let authorized = false;
 let courses = [];
 let records = [];
@@ -22,6 +23,7 @@ let recordDraftInitialized = false;
 let viewerMedia = [];
 let viewerIndex = 0;
 let viewerTouchStart = 0;
+let endTimeWasEdited = false;
 
 function beijingNow() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
@@ -214,12 +216,14 @@ function openRecordForm(record = null) {
     form.elements.location.value = record.location || '';
     form.elements.content.value = record.content || '';
     form.elements.comment.value = record.comment || '';
+    endTimeWasEdited = Boolean(record.end);
     recordDraftInitialized = true;
   } else if (!recordDraftInitialized || switchingFromEdit) {
     form.reset(); selectedFiles = []; renderSelectedFiles();
     form.elements.start.value = toLocalInputValue(beijingNow());
     form.elements.status.value = '已完成';
     applyCourseDefaults();
+    endTimeWasEdited = false;
     recordDraftInitialized = true;
   }
   document.getElementById('recordDialogTitle').textContent = record ? '修改上课记录' : '新增上课记录';
@@ -351,12 +355,6 @@ function renderSelectedFiles() {
 }
 
 function renderUploadProgress() {
-  const container = document.getElementById('overallUpload');
-  if (!uploadStates.length) { container.hidden = true; return; }
-  const total = uploadStates.reduce((sum, state) => sum + state.file.size, 0);
-  const loaded = uploadStates.reduce((sum, state) => sum + state.loaded, 0);
-  const percent = total ? Math.round(loaded / total * 100) : 0;
-  container.hidden = false; container.querySelector('progress').value = percent; container.querySelector('strong').textContent = `${percent}%`;
   uploadStates.forEach((state, index) => {
     const row = document.querySelectorAll('.selected-file')[index]; if (!row) return;
     const value = state.file.size ? Math.round(state.loaded / state.file.size * 100) : 0;
@@ -376,8 +374,27 @@ function applyCourseDefaults() {
   const form = document.getElementById('recordForm');
   const course = courses.find((item) => item.id === form.elements.courseId.value) || courses[0];
   if (!course) return;
-  if (!form.elements.duration.value) form.elements.duration.value = course.defaultDuration || '';
+  form.elements.duration.value = course.defaultDuration || COURSE_DEFAULT_DURATIONS[course.name] || '';
   if (!form.elements.location.value) form.elements.location.value = course.location || '';
+  endTimeWasEdited = false;
+  updateEndFromDuration();
+}
+
+function updateEndFromDuration() {
+  const form = document.getElementById('recordForm');
+  const duration = Number(form.elements.duration.value || 0);
+  if (!form.elements.start.value || !Number.isFinite(duration) || duration <= 0) return;
+  const start = new Date(`${form.elements.start.value}:00+08:00`);
+  form.elements.end.value = toBeijingInputValue(new Date(start.getTime() + duration * 60_000));
+}
+
+function updateDurationFromTimes() {
+  const form = document.getElementById('recordForm');
+  if (!form.elements.start.value || !form.elements.end.value) return;
+  const start = new Date(`${form.elements.start.value}:00+08:00`);
+  const end = new Date(`${form.elements.end.value}:00+08:00`);
+  const minutes = Math.round((end - start) / 60_000);
+  if (minutes > 0) form.elements.duration.value = String(minutes);
 }
 
 function openMedia(recordId, index) {
@@ -437,9 +454,12 @@ async function postJson(path, payload) {
 
 function setupEvents() {
   document.getElementById('refreshButton').addEventListener('click', () => loadClasses(true));
-  document.getElementById('addRecordButton').addEventListener('click', openRecordForm); document.getElementById('mobileAddButton').addEventListener('click', openRecordForm);
+  document.getElementById('addRecordButton').addEventListener('click', () => openRecordForm()); document.getElementById('mobileAddButton').addEventListener('click', () => openRecordForm());
   document.getElementById('yearSelect').addEventListener('change', (event) => { selectedYear = Number(event.target.value); selectedMonth = selectedYear === beijingNow().getFullYear() ? beijingNow().getMonth() : 0; selectedDate = ''; loadClasses(); });
   document.getElementById('recordForm').addEventListener('submit', submitRecord); document.getElementById('courseInput').addEventListener('change', applyCourseDefaults);
+  document.querySelector('[name="start"]').addEventListener('change', () => { if (endTimeWasEdited) updateDurationFromTimes(); else updateEndFromDuration(); });
+  document.querySelector('[name="duration"]').addEventListener('input', () => { endTimeWasEdited = false; updateEndFromDuration(); });
+  document.querySelector('[name="end"]').addEventListener('change', () => { endTimeWasEdited = true; updateDurationFromTimes(); });
   document.getElementById('closeRecordButton').addEventListener('click', () => { if (!uploadInProgress) document.getElementById('recordDialog').close(); }); document.getElementById('cancelRecordButton').addEventListener('click', () => { if (!uploadInProgress) document.getElementById('recordDialog').close(); });
   document.getElementById('cameraInput').addEventListener('change', (event) => { addFiles(event.target.files); event.target.value = ''; }); document.getElementById('galleryInput').addEventListener('change', (event) => { addFiles(event.target.files); event.target.value = ''; });
   document.getElementById('pinForm').addEventListener('submit', submitPin); document.getElementById('cancelPinButton').addEventListener('click', () => finishPin(null));
