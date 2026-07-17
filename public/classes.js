@@ -3,6 +3,7 @@ import { mountSharedNav } from './shared-nav.js';
 const VALID_STATUSES = ['全部', '已完成', '计划中', '试听', '请假', '取消'];
 const COLOR_MAP = { '粉色': '#f58fb1', '蓝色': '#69bdda', '黄色': '#f2be39', '薄荷绿': '#70c9b0', '紫色': '#a98ad4' };
 const COURSE_DEFAULT_DURATIONS = { '体能': 90, '跳舞': 50, '英语': 45 };
+const COURSE_DEFAULT_START_TIMES = { '体能': '09:00', '跳舞': '17:30' };
 let authorized = false;
 let courses = [];
 let records = [];
@@ -171,7 +172,7 @@ function renderRecord(record) {
   const course = record.course || courses.find((item) => item.id === record.courseId);
   const cover = record.media?.[0];
   const thumbnail = cover ? `<button class="record-thumb" type="button" data-media-record="${record.id}" data-media-index="0" aria-label="查看 ${escapeHtml(cover.name)}">${cover.type === 'video' ? `<video src="${cover.url}#t=0.1" muted preload="metadata"></video>` : `<img src="${cover.url}" alt="" loading="lazy">`}${record.media.length > 1 ? `<span class="media-count">+${record.media.length - 1}</span>` : ''}</button>` : `<div class="record-thumb record-emoji" aria-hidden="true">${escapeHtml(courseIconText(course))}</div>`;
-  return `<article class="class-record ${cover ? 'has-media' : ''}">${thumbnail}<div class="record-text"><div class="record-title">${escapeHtml(course?.name || '课程')}</div><div class="record-meta">${formatDateTime(record.start)}${record.duration ? ` · ${record.duration} 分钟` : ''}${record.location ? ` · ${escapeHtml(record.location)}` : ''}</div>${record.content ? `<div class="record-copy">${escapeHtml(record.content)}</div>` : ''}${record.comment ? `<div class="record-copy">💬 ${escapeHtml(record.comment)}</div>` : ''}</div><button class="record-edit" type="button" data-edit-record="${record.id}">修改</button></article>`;
+  return `<article class="class-record ${cover ? 'has-media' : ''}">${thumbnail}<div class="record-text"><div class="record-title">${escapeHtml(course?.name || '课程')}</div><div class="record-meta">${formatRecordTime(record)}${record.duration ? ` · ${record.duration} 分钟` : ''}${record.location ? ` · ${escapeHtml(record.location)}` : ''}</div>${record.content ? `<div class="record-copy">${escapeHtml(record.content)}</div>` : ''}${record.comment ? `<div class="record-copy">💬 ${escapeHtml(record.comment)}</div>` : ''}</div><button class="record-edit" type="button" data-edit-record="${record.id}">修改</button></article>`;
 }
 
 function bindDynamicEvents() {
@@ -374,6 +375,11 @@ function applyCourseDefaults() {
   const form = document.getElementById('recordForm');
   const course = courses.find((item) => item.id === form.elements.courseId.value) || courses[0];
   if (!course) return;
+  const defaultStartTime = COURSE_DEFAULT_START_TIMES[course.name];
+  if (defaultStartTime) {
+    const date = form.elements.start.value.slice(0, 10) || toLocalInputValue(beijingNow()).slice(0, 10);
+    form.elements.start.value = `${date}T${defaultStartTime}`;
+  }
   form.elements.duration.value = course.defaultDuration || COURSE_DEFAULT_DURATIONS[course.name] || '';
   if (!form.elements.location.value) form.elements.location.value = course.location || '';
   endTimeWasEdited = false;
@@ -478,6 +484,14 @@ function courseColor(course) { return COLOR_MAP[course?.color] || COLOR_MAP['粉
 function courseSoft(course) { return `${courseColor(course)}33`; }
 function statusDotClass(status) { if (status === '计划中') return 'is-planned'; if (status === '请假' || status === '取消') return 'is-muted'; return ''; }
 function formatDateTime(value) { return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value)); }
+function formatRecordTime(record) {
+  const start = formatDateTime(record.start);
+  if (!record.end) return start;
+  const end = dateKey(record.start) === dateKey(record.end)
+    ? new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' }).format(new Date(record.end))
+    : formatDateTime(record.end);
+  return `${start} - ${end}`;
+}
 function toLocalInputValue(date) { const pad = (value) => String(value).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`; }
 function localInputToIso(value) { return new Date(`${value}:00+08:00`).toISOString(); }
 function apiError(data, fallback) { const error = new Error(data.error || fallback); error.code = data.code || ''; return error; }

@@ -144,6 +144,7 @@ When adding an endpoint, update `README.md`, this file, and proportional tests i
 - Never delete, archive, reset, or rewrite real Notion records for testing.
 - Class media has no app-defined per-file size limit. Keep the five-file and image/video MIME constraints, immediate pre-upload, 10 MiB chunks, signed upload/attachment credentials, per-file progress and retries, and the documented Notion/platform limit caveat.
 - Class start/end/duration fields are linked in Beijing time. Course `默认时长` wins; fallback defaults are English 45, fitness 90, and dance 50 minutes.
+- Course selection preserves the chosen date while applying fallback start times: fitness at 09:00 and dance at 17:30.
 - Inspect current Notion data before a write test; the user may edit Notion while work is in progress.
 - Create test records with an unmistakable temporary title, capture every returned page ID, and clean up only those exact IDs.
 - Re-query afterward to confirm test records are gone and the user's balance is unchanged.
