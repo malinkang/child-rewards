@@ -206,9 +206,9 @@ function openRecordForm() {
 
 async function submitRecord(event) {
   event.preventDefault();
+  const form = event.currentTarget;
   const pin = await requestPin('save');
   if (!pin) return;
-  const form = event.currentTarget;
   const payload = new FormData(form);
   payload.set('start', localInputToIso(form.elements.start.value));
   if (form.elements.end.value) payload.set('end', localInputToIso(form.elements.end.value));
@@ -223,7 +223,12 @@ async function submitRecord(event) {
     document.getElementById('recordDialog').close(); selectedFiles = []; form.reset(); recordDraftInitialized = false;
     await loadClasses();
     showToast(data.uploadFailures?.length ? `记录已保存，${data.uploadFailures.length} 个文件上传失败` : '上课记录已保存');
-  } catch (error) { document.getElementById('recordError').textContent = error.message; }
+  } catch (error) {
+    const errorElement = document.getElementById('recordError');
+    errorElement.textContent = error.message;
+    errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    showToast(error.message);
+  }
   finally { button.disabled = false; button.textContent = '保存记录'; }
 }
 
