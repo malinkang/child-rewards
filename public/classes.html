@@ -45,7 +45,6 @@
         <div><strong id="mediaPickerTitle">课堂照片和视频</strong><small>最多 5 个，不限制单个文件大小；大文件会自动分片上传</small></div>
         <div class="media-buttons">
           <label class="media-button">📷 拍摄或选择<input id="cameraInput" type="file" accept="image/*,video/*" multiple /></label>
-          <label class="media-button">🖼️ 从相册选择<input id="galleryInput" type="file" accept="image/*,video/*" multiple /></label>
         </div>
         <div id="selectedMedia" class="selected-media"></div>
       </section>
@@ -67,6 +66,6 @@
     <div class="media-view-card"><header><h2 id="mediaTitle">课堂回忆</h2><span id="mediaPosition" class="media-position"></span><button id="closeMediaButton" class="round-close" type="button" aria-label="关闭">×</button></header><div class="media-stage"><button id="previousMediaButton" class="media-arrow previous" type="button" aria-label="上一张">‹</button><div id="mediaViewer"></div><button id="nextMediaButton" class="media-arrow next" type="button" aria-label="下一张">›</button></div></div>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="./classes.js?v=20260717-course-counts" type="module"></script>
+  <script src="./classes.js?v=20260717-single-picker" type="module"></script>
 </body>
 </html>

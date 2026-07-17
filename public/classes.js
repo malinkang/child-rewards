@@ -466,7 +466,7 @@ function setupEvents() {
   document.querySelector('[name="duration"]').addEventListener('input', () => { endTimeWasEdited = false; updateEndFromDuration(); });
   document.querySelector('[name="end"]').addEventListener('change', () => { endTimeWasEdited = true; updateDurationFromTimes(); });
   document.getElementById('closeRecordButton').addEventListener('click', () => { if (!uploadInProgress) document.getElementById('recordDialog').close(); }); document.getElementById('cancelRecordButton').addEventListener('click', () => { if (!uploadInProgress) document.getElementById('recordDialog').close(); });
-  document.getElementById('cameraInput').addEventListener('change', (event) => { addFiles(event.target.files); event.target.value = ''; }); document.getElementById('galleryInput').addEventListener('change', (event) => { addFiles(event.target.files); event.target.value = ''; });
+  document.getElementById('cameraInput').addEventListener('change', (event) => { addFiles(event.target.files); event.target.value = ''; });
   document.getElementById('pinForm').addEventListener('submit', submitPin); document.getElementById('cancelPinButton').addEventListener('click', () => finishPin(null));
   document.getElementById('pinDialog').addEventListener('cancel', (event) => { event.preventDefault(); finishPin(null); });
   document.getElementById('closeMediaButton').addEventListener('click', closeMedia); document.getElementById('mediaDialog').addEventListener('cancel', (event) => { event.preventDefault(); closeMedia(); });
