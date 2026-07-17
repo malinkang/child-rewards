@@ -16,7 +16,6 @@ let statusFilter = '全部';
 let selectedFiles = [];
 let uploadStates = [];
 let uploadInProgress = false;
-let pendingRecordId = '';
 let pinRequest = null;
 let recordDraftInitialized = false;
 
@@ -165,7 +164,7 @@ function renderRecords() {
 function renderRecord(record) {
   const course = record.course || courses.find((item) => item.id === record.courseId);
   const media = (record.media || []).slice(0, 3).map((item, index) => `<button class="record-thumb" type="button" data-media-record="${record.id}" data-media-index="${index}" aria-label="查看 ${escapeHtml(item.name)}">${item.type === 'video' ? `<video src="${item.url}#t=0.1" muted preload="metadata"></video>` : `<img src="${item.url}" alt="" loading="lazy">`}</button>`).join('');
-  return `<article class="class-record"><div class="record-icon" style="--course-soft:${courseSoft(course)}">${courseIcon(course)}</div><div><div class="record-title">${escapeHtml(course?.name || '课程')}<span class="status-pill">${escapeHtml(record.status)}</span></div><div class="record-meta">${formatDateTime(record.start)}${record.duration ? ` · ${record.duration} 分钟` : ''}${record.location ? ` · ${escapeHtml(record.location)}` : ''}</div>${record.content ? `<div class="record-copy">${escapeHtml(record.content)}</div>` : ''}${record.comment ? `<div class="record-copy">💬 ${escapeHtml(record.comment)}</div>` : ''}${media ? `<div class="record-media">${media}${record.media.length > 3 ? `<span class="status-pill">+${record.media.length - 3}</span>` : ''}</div>` : ''}</div><time class="record-date">${dateKey(record.start).slice(5).replace('-', ' / ')}</time></article>`;
+  return `<article class="class-record ${media ? '' : 'without-media'}"><div class="record-text"><div class="record-title">${escapeHtml(course?.name || '课程')}<span class="status-pill">${escapeHtml(record.status)}</span></div><div class="record-meta">${formatDateTime(record.start)}${record.duration ? ` · ${record.duration} 分钟` : ''}${record.location ? ` · ${escapeHtml(record.location)}` : ''}</div>${record.content ? `<div class="record-copy">${escapeHtml(record.content)}</div>` : ''}${record.comment ? `<div class="record-copy">💬 ${escapeHtml(record.comment)}</div>` : ''}</div>${media ? `<div class="record-media">${media}${record.media.length > 3 ? `<span class="media-more">+${record.media.length - 3}</span>` : ''}</div>` : ''}</article>`;
 }
 
 function bindDynamicEvents() {
@@ -210,6 +209,8 @@ function openRecordForm() {
 async function submitRecord(event) {
   event.preventDefault();
   const form = event.currentTarget;
+  if (uploadInProgress) return showToast('请等照片和视频上传完成');
+  if (uploadStates.some((state) => state.status !== '上传完成')) return showToast('有文件尚未上传成功，请先重试');
   const pin = await requestPin('save');
   if (!pin) return;
   const payload = Object.fromEntries(new FormData(form));
@@ -217,20 +218,14 @@ async function submitRecord(event) {
   payload.end = form.elements.end.value ? localInputToIso(form.elements.end.value) : '';
   payload.duration = Number(payload.duration || 0);
   payload.pin = pin;
+  payload.uploads = uploadStates.map((state) => state.attachment);
   const button = document.getElementById('saveRecordButton');
-  uploadInProgress = true; setRecordFormLocked(true); button.textContent = '保存记录中...';
+  setRecordFormLocked(true); button.textContent = '保存记录中...';
   try {
-    if (!pendingRecordId) {
-      const response = await fetch('/api/classes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw apiError(data, '记录保存失败');
-      pendingRecordId = data.record.id;
-    }
-    if (selectedFiles.length) {
-      button.textContent = '上传媒体中...';
-      await uploadClassMedia(pendingRecordId);
-    }
-    document.getElementById('recordDialog').close(); selectedFiles = []; uploadStates = []; pendingRecordId = ''; form.reset(); recordDraftInitialized = false;
+    const response = await fetch('/api/classes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw apiError(data, '记录保存失败');
+    document.getElementById('recordDialog').close(); selectedFiles = []; uploadStates = []; form.reset(); recordDraftInitialized = false;
     await loadClasses();
     showToast('上课记录已保存');
   } catch (error) {
@@ -239,22 +234,32 @@ async function submitRecord(event) {
     errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
     showToast(error.message);
   }
-  finally { uploadInProgress = false; setRecordFormLocked(false); button.textContent = '保存记录'; }
+  finally { setRecordFormLocked(false); button.textContent = '保存记录'; }
 }
 
 const UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024;
 
-async function uploadClassMedia(recordId) {
-  if (!uploadStates.length) uploadStates = selectedFiles.map((file) => ({ file, loaded: 0, status: '等待上传', nextPart: 0, session: null }));
+async function processUploadQueue() {
+  if (uploadInProgress) return;
+  uploadInProgress = true;
+  for (const state of uploadStates) {
+    if (state.status === '上传完成' || state.status === '上传失败') continue;
+    try {
+      await uploadClassMedia(state);
+    } catch (error) {
+      state.status = '上传失败'; state.error = error.message; renderSelectedFiles();
+    }
+  }
+  uploadInProgress = false;
   renderSelectedFiles();
-  for (let index = 0; index < uploadStates.length; index += 1) {
-    const state = uploadStates[index];
-    if (state.status === '上传完成') continue;
+}
+
+async function uploadClassMedia(state) {
     const numberOfParts = Math.ceil(state.file.size / UPLOAD_CHUNK_SIZE);
     if (!state.session) {
       state.status = '准备上传'; renderSelectedFiles();
       state.session = await postJson('/api/class-uploads/start', {
-        recordId, filename: state.file.name, contentType: state.file.type, size: state.file.size, numberOfParts,
+        filename: state.file.name, contentType: state.file.type, size: state.file.size, numberOfParts,
       });
     }
     for (let part = state.nextPart; part < numberOfParts; part += 1) {
@@ -267,9 +272,8 @@ async function uploadClassMedia(recordId) {
       state.nextPart = part + 1; state.loaded = start + chunk.size; renderUploadProgress();
     }
     state.status = '正在保存'; renderSelectedFiles();
-    await postJson(`/api/class-uploads/${state.session.uploadId}/complete`, { token: state.session.token });
+    state.attachment = await postJson(`/api/class-uploads/${state.session.uploadId}/complete`, { token: state.session.token });
     state.loaded = state.file.size; state.status = '上传完成'; renderSelectedFiles();
-  }
 }
 
 async function uploadChunkWithRetry(session, partNumber, chunk, onProgress) {
@@ -304,17 +308,23 @@ function setRecordFormLocked(locked) {
 function addFiles(fileList) {
   for (const file of fileList) {
     if (selectedFiles.length >= 5) break;
-    if (!selectedFiles.some((item) => item.name === file.name && item.size === file.size)) selectedFiles.push(file);
+    if (!selectedFiles.some((item) => item.name === file.name && item.size === file.size)) {
+      selectedFiles.push(file);
+      uploadStates.push({ file, loaded: 0, status: '等待上传', nextPart: 0, session: null, attachment: null, error: '' });
+    }
   }
   renderSelectedFiles();
+  processUploadQueue();
 }
 
 function renderSelectedFiles() {
   document.getElementById('selectedMedia').innerHTML = selectedFiles.map((file, index) => {
     const state = uploadStates[index]; const percent = state ? Math.round(state.loaded / file.size * 100) : 0;
-    return `<div class="selected-file"><div class="selected-file-heading"><span>${escapeHtml(file.name)}</span><small>${formatFileSize(file.size)}</small>${uploadInProgress || pendingRecordId ? '' : `<button type="button" data-remove-file="${index}" aria-label="移除">×</button>`}</div>${state ? `<div class="file-progress"><progress value="${percent}" max="100"></progress><span>${percent}% · ${escapeHtml(state.status)}</span></div>` : ''}</div>`;
+    const isUploading = state && !['等待上传', '上传完成', '上传失败'].includes(state.status);
+    return `<div class="selected-file"><div class="selected-file-heading"><span>${escapeHtml(file.name)}</span><small>${formatFileSize(file.size)}</small>${isUploading ? '' : `<button type="button" data-remove-file="${index}" aria-label="移除">×</button>`}</div>${state ? `<div class="file-progress"><progress value="${percent}" max="100"></progress><span>${percent}% · ${escapeHtml(state.status)}</span>${state.status === '上传失败' ? `<button class="retry-upload" type="button" data-retry-file="${index}">重试</button>` : ''}</div>${state.error ? `<small class="upload-error">${escapeHtml(state.error)}</small>` : ''}` : ''}</div>`;
   }).join('');
-  document.querySelectorAll('[data-remove-file]').forEach((button) => button.addEventListener('click', () => { selectedFiles.splice(Number(button.dataset.removeFile), 1); renderSelectedFiles(); }));
+  document.querySelectorAll('[data-remove-file]').forEach((button) => button.addEventListener('click', () => { const index = Number(button.dataset.removeFile); selectedFiles.splice(index, 1); uploadStates.splice(index, 1); renderSelectedFiles(); }));
+  document.querySelectorAll('[data-retry-file]').forEach((button) => button.addEventListener('click', () => { const state = uploadStates[Number(button.dataset.retryFile)]; state.status = '等待上传'; state.error = ''; renderSelectedFiles(); processUploadQueue(); }));
   renderUploadProgress();
 }
 
@@ -378,7 +388,7 @@ async function ensureAuthorized() { if (authorized) return true; return Boolean(
 
 async function toggleAuthorization() {
   if (!authorized) { if (await ensureAuthorized()) await loadClasses(); return; }
-  try { await postJson('/api/auth/logout', {}); authorized = false; courses = []; records = []; selectedFiles = []; uploadStates = []; pendingRecordId = ''; recordDraftInitialized = false; document.getElementById('recordForm').reset(); mountNav(); document.getElementById('privateContent').innerHTML = '<div class="empty-card">这台设备已经锁定。</div>'; showToast('这台设备已锁定'); }
+  try { await postJson('/api/auth/logout', {}); authorized = false; courses = []; records = []; selectedFiles = []; uploadStates = []; recordDraftInitialized = false; document.getElementById('recordForm').reset(); mountNav(); document.getElementById('privateContent').innerHTML = '<div class="empty-card">这台设备已经锁定。</div>'; showToast('这台设备已锁定'); }
   catch (error) { showToast(error.message); }
 }
 
@@ -393,7 +403,7 @@ function setupEvents() {
   document.getElementById('yearSelect').addEventListener('change', (event) => { selectedYear = Number(event.target.value); selectedMonth = selectedYear === beijingNow().getFullYear() ? beijingNow().getMonth() : 0; selectedDate = ''; loadClasses(); });
   document.getElementById('recordForm').addEventListener('submit', submitRecord); document.getElementById('courseInput').addEventListener('change', applyCourseDefaults);
   document.getElementById('closeRecordButton').addEventListener('click', () => { if (!uploadInProgress) document.getElementById('recordDialog').close(); }); document.getElementById('cancelRecordButton').addEventListener('click', () => { if (!uploadInProgress) document.getElementById('recordDialog').close(); });
-  document.getElementById('cameraInput').addEventListener('change', (event) => addFiles(event.target.files)); document.getElementById('galleryInput').addEventListener('change', (event) => addFiles(event.target.files));
+  document.getElementById('cameraInput').addEventListener('change', (event) => { addFiles(event.target.files); event.target.value = ''; }); document.getElementById('galleryInput').addEventListener('change', (event) => { addFiles(event.target.files); event.target.value = ''; });
   document.getElementById('pinForm').addEventListener('submit', submitPin); document.getElementById('cancelPinButton').addEventListener('click', () => finishPin(null));
   document.getElementById('pinDialog').addEventListener('cancel', (event) => { event.preventDefault(); finishPin(null); });
   document.getElementById('closeMediaButton').addEventListener('click', closeMedia); document.getElementById('mediaDialog').addEventListener('cancel', (event) => { event.preventDefault(); closeMedia(); });

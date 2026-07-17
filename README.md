@@ -118,10 +118,10 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 | `POST` | `/api/auth/login` | 使用家长 PIN 授权当前设备 30 天 |
 | `POST` | `/api/auth/logout` | 锁定当前设备 |
 | `GET` | `/api/classes?year=YYYY` | 授权后获取课程、记录及年度统计 |
-| `POST` | `/api/classes` | 使用家长 PIN 新增文字记录 |
-| `POST` | `/api/class-uploads/start` | 为课堂媒体创建签名分片上传会话 |
+| `POST` | `/api/classes` | 使用家长 PIN 和已上传 file ID 新增完整记录 |
+| `POST` | `/api/class-uploads/start` | 选中文件后立即创建签名分片上传会话 |
 | `POST` | `/api/class-uploads/:uploadId/parts/:partNumber` | 上传一个 10 MiB 文件分片 |
-| `POST` | `/api/class-uploads/:uploadId/complete` | 完成上传并将媒体挂到课堂记录 |
+| `POST` | `/api/class-uploads/:uploadId/complete` | 完成上传并返回签名 file ID 凭证 |
 | `GET` | `/api/class-avatar` | 授权代理孩子头像 |
 | `GET` | `/api/class-course-icon/:courseId` | 授权代理课程图片图标 |
 | `GET` | `/api/class-media/:recordId/:index` | 授权代理课堂图片或视频 |
@@ -194,7 +194,8 @@ curl https://child.malinkang.com/api/gifts
 - 同一来源的写入操作至少间隔 2 秒；PIN 连续错误 5 次后暂时锁定 15 分钟。
 - 上课记录页、头像及课堂媒体只对已授权设备开放。
 - 上课记录的年度统计只计算 `已完成` 和 `试听`。
-- 课堂媒体由浏览器按 10 MiB 分片上传，界面显示单文件及总体进度；应用不设置单文件大小上限，但仍受 Notion 工作区文件额度和平台请求限制约束。
+- 选择课堂媒体后立即按 10 MiB 分片预上传，每个文件显示独立进度和失败重试；保存时才创建 Notion Page，并使用签名凭证写入已上传的 file ID。
+- 应用不设置课堂媒体单文件大小上限，但仍受 Notion 工作区文件额度和平台请求限制约束。
 - 媒体 URL 不返回浏览器，Worker 校验记录归属后代理文件和视频 Range 请求。
 - 归档任务不能继续获得星星。
 - 每条新记录必须关联唯一余额统计行。

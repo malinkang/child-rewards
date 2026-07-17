@@ -206,6 +206,8 @@ async function createClassRecord(request, env) {
   if (pinError) return pinError;
   const validation = validateClassRecord(body);
   if (validation) return validation;
+  const media = await resolveClassUploads(body.uploads, env);
+  if (media instanceof Response) return media;
 
   const coursePage = await notion(`/pages/${body.courseId}`, env);
   validatePageParent(coursePage, env.NOTION_COURSES_DATABASE_ID, 'Course page');
@@ -224,6 +226,7 @@ async function createClassRecord(request, env) {
     '老师点评': richTextProperty(body.comment),
     '地点': richTextProperty(body.location),
   };
+  if (media.length) properties['媒体'] = { files: media };
   const page = await notion('/pages', env, {
     method: 'POST',
     body: JSON.stringify({ parent: { database_id: env.NOTION_CLASS_RECORDS_DATABASE_ID }, properties }),
@@ -236,28 +239,23 @@ async function createClassRecord(request, env) {
 async function startClassUpload(request, env) {
   requireClassesConfig(env);
   const body = await readJson(request);
-  if (!isNotionId(body.recordId)) return json({ error: '上课记录无效', code: 'INVALID_RECORD' }, 400);
   if (!isClassMediaType(body.contentType) || !body.filename || String(body.filename).length > 255) {
     return json({ error: '只支持图片或视频文件', code: 'INVALID_FILE' }, 400);
   }
   if (!Number.isSafeInteger(body.size) || body.size <= 0 || body.numberOfParts !== Math.ceil(body.size / (10 * 1024 * 1024))) {
     return json({ error: '文件信息无效', code: 'INVALID_FILE' }, 400);
   }
-  const page = await notion(`/pages/${body.recordId}`, env);
-  validatePageParent(page, env.NOTION_CLASS_RECORDS_DATABASE_ID, 'Class record');
-  if (page.archived || page.in_trash) return json({ error: '记录不存在', code: 'NOT_FOUND' }, 404);
-  if ((page.properties?.['媒体']?.files || []).length >= 5) return json({ error: '一条记录最多保存 5 个文件', code: 'TOO_MANY_FILES' }, 400);
   const upload = await notion('/file_uploads', env, {
     method: 'POST', headers: { 'Notion-Version': '2025-09-03' },
     body: JSON.stringify({ mode: 'multi_part', number_of_parts: body.numberOfParts, filename: body.filename, content_type: body.contentType }),
   });
-  const session = { uploadId: upload.id, recordId: page.id, filename: body.filename, contentType: body.contentType, size: body.size, parts: body.numberOfParts, exp: Math.floor(Date.now() / 1000) + 60 * 60 };
+  const session = { kind: 'class-upload', uploadId: upload.id, filename: body.filename, contentType: body.contentType, size: body.size, parts: body.numberOfParts, exp: Math.floor(Date.now() / 1000) + 60 * 60 };
   return json({ uploadId: upload.id, token: await createUploadToken(session, env.AUTH_SECRET) }, 201);
 }
 
 async function sendClassUploadPart(request, env, uploadId, partNumber) {
   const session = await verifyUploadToken(request.headers.get('X-Upload-Token'), env.AUTH_SECRET);
-  if (!session || normalizeNotionId(session.uploadId) !== normalizeNotionId(uploadId) || partNumber < 1 || partNumber > session.parts) {
+  if (!session || session.kind !== 'class-upload' || normalizeNotionId(session.uploadId) !== normalizeNotionId(uploadId) || partNumber < 1 || partNumber > session.parts) {
     return json({ error: '上传会话无效或已过期', code: 'INVALID_UPLOAD_SESSION' }, 403);
   }
   const contentLength = Number(request.headers.get('Content-Length') || 0);
@@ -276,22 +274,34 @@ async function sendClassUploadPart(request, env, uploadId, partNumber) {
 async function completeClassUpload(request, env, uploadId) {
   const body = await readJson(request);
   const session = await verifyUploadToken(body.token, env.AUTH_SECRET);
-  if (!session || normalizeNotionId(session.uploadId) !== normalizeNotionId(uploadId)) {
+  if (!session || session.kind !== 'class-upload' || normalizeNotionId(session.uploadId) !== normalizeNotionId(uploadId)) {
     return json({ error: '上传会话无效或已过期', code: 'INVALID_UPLOAD_SESSION' }, 403);
   }
-  const page = await notion(`/pages/${session.recordId}`, env);
-  validatePageParent(page, env.NOTION_CLASS_RECORDS_DATABASE_ID, 'Class record');
-  if (page.archived || page.in_trash) return json({ error: '记录不存在', code: 'NOT_FOUND' }, 404);
-  const files = page.properties?.['媒体']?.files || [];
-  if (files.some((file) => normalizeNotionId(file.file_upload?.id) === normalizeNotionId(uploadId))) return json({ attached: true });
-  if (files.length >= 5) return json({ error: '一条记录最多保存 5 个文件', code: 'TOO_MANY_FILES' }, 400);
   const upload = await notion(`/file_uploads/${uploadId}`, env, { headers: { 'Notion-Version': '2025-09-03' } });
   if (upload.status !== 'uploaded') {
     await notion(`/file_uploads/${uploadId}/complete`, env, { method: 'POST', headers: { 'Notion-Version': '2025-09-03' }, body: JSON.stringify({}) });
   }
-  const uploaded = { name: session.filename, type: 'file_upload', file_upload: { id: uploadId } };
-  await notion(`/pages/${page.id}`, env, { method: 'PATCH', body: JSON.stringify({ properties: { '媒体': { files: [...files, uploaded] } } }) });
-  return json({ attached: true });
+  const attachment = { kind: 'class-attachment', uploadId, filename: session.filename, exp: Math.floor(Date.now() / 1000) + 24 * 60 * 60 };
+  return json({ uploadId, filename: session.filename, token: await createUploadToken(attachment, env.AUTH_SECRET) });
+}
+
+async function resolveClassUploads(uploads, env) {
+  if (!Array.isArray(uploads)) return [];
+  if (uploads.length > 5) return json({ error: '一次最多上传 5 个文件', code: 'TOO_MANY_FILES' }, 400);
+  const files = [];
+  const seen = new Set();
+  for (const item of uploads) {
+    const attachment = await verifyUploadToken(item?.token, env.AUTH_SECRET);
+    const id = normalizeNotionId(item?.uploadId);
+    if (!attachment || attachment.kind !== 'class-attachment' || normalizeNotionId(attachment.uploadId) !== id || seen.has(id)) {
+      return json({ error: '上传文件凭证无效或已过期', code: 'INVALID_UPLOAD' }, 400);
+    }
+    const upload = await notion(`/file_uploads/${attachment.uploadId}`, env, { headers: { 'Notion-Version': '2025-09-03' } });
+    if (upload.status !== 'uploaded') return json({ error: '文件尚未上传完成', code: 'UPLOAD_INCOMPLETE' }, 400);
+    seen.add(id);
+    files.push({ name: attachment.filename, type: 'file_upload', file_upload: { id: attachment.uploadId } });
+  }
+  return files;
 }
 
 async function proxyProfileAvatar(request, env) {
@@ -692,7 +702,10 @@ async function readSpendRequest(request) {
 }
 
 async function readClassRecordRequest(request) {
-  if (!request.headers.get('Content-Type')?.includes('multipart/form-data')) return { ...(await readJson(request)), files: [] };
+  if (!request.headers.get('Content-Type')?.includes('multipart/form-data')) {
+    const body = await readJson(request);
+    return { ...body, files: [], uploads: Array.isArray(body.uploads) ? body.uploads : [] };
+  }
   const form = await request.formData();
   return {
     pin: form.get('pin'),
