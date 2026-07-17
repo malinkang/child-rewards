@@ -16,6 +16,7 @@ let statusFilter = '全部';
 let selectedFiles = [];
 let uploadStates = [];
 let uploadInProgress = false;
+let editingRecordId = '';
 let pinRequest = null;
 let recordDraftInitialized = false;
 let viewerMedia = [];
@@ -168,7 +169,7 @@ function renderRecord(record) {
   const course = record.course || courses.find((item) => item.id === record.courseId);
   const cover = record.media?.[0];
   const thumbnail = cover ? `<button class="record-thumb" type="button" data-media-record="${record.id}" data-media-index="0" aria-label="查看 ${escapeHtml(cover.name)}">${cover.type === 'video' ? `<video src="${cover.url}#t=0.1" muted preload="metadata"></video>` : `<img src="${cover.url}" alt="" loading="lazy">`}${record.media.length > 1 ? `<span class="media-count">+${record.media.length - 1}</span>` : ''}</button>` : `<div class="record-thumb record-emoji" aria-hidden="true">${escapeHtml(courseIconText(course))}</div>`;
-  return `<article class="class-record ${cover ? 'has-media' : ''}">${thumbnail}<div class="record-text"><div class="record-title">${escapeHtml(course?.name || '课程')}</div><div class="record-meta">${formatDateTime(record.start)}${record.duration ? ` · ${record.duration} 分钟` : ''}${record.location ? ` · ${escapeHtml(record.location)}` : ''}</div>${record.content ? `<div class="record-copy">${escapeHtml(record.content)}</div>` : ''}${record.comment ? `<div class="record-copy">💬 ${escapeHtml(record.comment)}</div>` : ''}</div><span class="record-status">${escapeHtml(record.status)}</span></article>`;
+  return `<article class="class-record ${cover ? 'has-media' : ''}">${thumbnail}<div class="record-text"><div class="record-title">${escapeHtml(course?.name || '课程')}</div><div class="record-meta">${formatDateTime(record.start)}${record.duration ? ` · ${record.duration} 分钟` : ''}${record.location ? ` · ${escapeHtml(record.location)}` : ''}</div>${record.content ? `<div class="record-copy">${escapeHtml(record.content)}</div>` : ''}${record.comment ? `<div class="record-copy">💬 ${escapeHtml(record.comment)}</div>` : ''}</div><button class="record-edit" type="button" data-edit-record="${record.id}">修改</button></article>`;
 }
 
 function bindDynamicEvents() {
@@ -179,6 +180,7 @@ function bindDynamicEvents() {
   document.querySelectorAll('[data-status-filter]').forEach((button) => button.addEventListener('click', () => { statusFilter = button.dataset.statusFilter; render(); }));
   document.getElementById('clearDateButton')?.addEventListener('click', () => { selectedDate = ''; render(); });
   document.querySelectorAll('[data-media-record]').forEach((button) => button.addEventListener('click', () => openMedia(button.dataset.mediaRecord, Number(button.dataset.mediaIndex))));
+  document.querySelectorAll('[data-edit-record]').forEach((button) => button.addEventListener('click', () => openRecordForm(records.find((record) => record.id === button.dataset.editRecord))));
 }
 
 function changeMonth(step) {
@@ -196,16 +198,34 @@ function selectDate(value) {
   document.getElementById('recordsBoard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function openRecordForm() {
-  if (!authorized) return ensureAuthorized().then((ok) => { if (ok) openRecordForm(); });
+function openRecordForm(record = null) {
+  if (!authorized) return ensureAuthorized().then((ok) => { if (ok) openRecordForm(record); });
   const form = document.getElementById('recordForm');
-  if (!recordDraftInitialized) {
+  const switchingFromEdit = Boolean(editingRecordId);
+  editingRecordId = record?.id || '';
+  if (record) {
+    form.reset(); selectedFiles = []; uploadStates = []; renderSelectedFiles();
+    form.elements.courseId.value = record.courseId;
+    form.elements.status.value = record.status;
+    form.elements.start.value = toBeijingInputValue(record.start);
+    form.elements.end.value = record.end ? toBeijingInputValue(record.end) : '';
+    form.elements.duration.value = record.duration || '';
+    form.elements.performance.value = record.performance || '';
+    form.elements.location.value = record.location || '';
+    form.elements.content.value = record.content || '';
+    form.elements.comment.value = record.comment || '';
+    recordDraftInitialized = true;
+  } else if (!recordDraftInitialized || switchingFromEdit) {
     form.reset(); selectedFiles = []; renderSelectedFiles();
     form.elements.start.value = toLocalInputValue(beijingNow());
     form.elements.status.value = '已完成';
     applyCourseDefaults();
     recordDraftInitialized = true;
   }
+  document.getElementById('recordDialogTitle').textContent = record ? '修改上课记录' : '新增上课记录';
+  document.getElementById('recordDialogEyebrow').textContent = record ? 'Edit Memory' : 'New Memory';
+  document.getElementById('mediaPicker').hidden = Boolean(record);
+  document.getElementById('saveRecordButton').textContent = record ? '保存修改' : '保存记录';
   document.getElementById('recordError').textContent = '';
   document.getElementById('recordDialog').showModal();
 }
@@ -215,30 +235,28 @@ async function submitRecord(event) {
   const form = event.currentTarget;
   if (uploadInProgress) return showToast('请等照片和视频上传完成');
   if (uploadStates.some((state) => state.status !== '上传完成')) return showToast('有文件尚未上传成功，请先重试');
-  const pin = await requestPin('save');
-  if (!pin) return;
   const payload = Object.fromEntries(new FormData(form));
   payload.start = localInputToIso(form.elements.start.value);
   payload.end = form.elements.end.value ? localInputToIso(form.elements.end.value) : '';
   payload.duration = Number(payload.duration || 0);
-  payload.pin = pin;
   payload.uploads = uploadStates.map((state) => state.attachment);
   const button = document.getElementById('saveRecordButton');
   setRecordFormLocked(true); button.textContent = '保存记录中...';
   try {
-    const response = await fetch('/api/classes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const response = await fetch(editingRecordId ? `/api/classes/${editingRecordId}` : '/api/classes', { method: editingRecordId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw apiError(data, '记录保存失败');
-    document.getElementById('recordDialog').close(); selectedFiles = []; uploadStates = []; form.reset(); recordDraftInitialized = false;
+    const wasEditing = Boolean(editingRecordId);
+    document.getElementById('recordDialog').close(); selectedFiles = []; uploadStates = []; editingRecordId = ''; form.reset(); recordDraftInitialized = false;
     await loadClasses();
-    showToast('上课记录已保存');
+    showToast(wasEditing ? '上课记录已修改' : '上课记录已保存');
   } catch (error) {
     const errorElement = document.getElementById('recordError');
     errorElement.textContent = error.message;
     errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
     showToast(error.message);
   }
-  finally { setRecordFormLocked(false); button.textContent = '保存记录'; }
+  finally { setRecordFormLocked(false); button.textContent = editingRecordId ? '保存修改' : '保存记录'; }
 }
 
 const UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024;
@@ -347,6 +365,7 @@ function renderUploadProgress() {
 }
 
 function formatFileSize(bytes) { const units = ['B', 'KB', 'MB', 'GB']; let value = bytes; let unit = 0; while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; } return `${value.toFixed(unit ? 1 : 0)} ${units[unit]}`; }
+function toBeijingInputValue(value) { return toLocalInputValue(new Date(new Date(value).toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }))); }
 
 function populateCourseInput() {
   const input = document.getElementById('courseInput');

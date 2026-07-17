@@ -24,6 +24,10 @@ export default {
       if (url.pathname === '/api/classes' && request.method === 'POST') {
         return handleWrite(request, () => requireAuthorizedWrite(request, env, () => createClassRecord(request, env)));
       }
+      const classRecordMatch = url.pathname.match(/^\/api\/classes\/([0-9a-f-]{32,36})$/i);
+      if (classRecordMatch && request.method === 'PATCH') {
+        return handleWrite(request, () => requireAuthorizedWrite(request, env, () => updateClassRecord(request, env, classRecordMatch[1])));
+      }
       if (url.pathname === '/api/class-uploads/start' && request.method === 'POST') {
         return handleWrite(request, () => requireAuthorized(request, env, () => startClassUpload(request, env)));
       }
@@ -202,8 +206,6 @@ async function getClasses(url, env) {
 async function createClassRecord(request, env) {
   requireClassesConfig(env);
   const body = await readClassRecordRequest(request);
-  const pinError = await validateActionPin(request, env, body.pin, 'class-record');
-  if (pinError) return pinError;
   const validation = validateClassRecord(body);
   if (validation) return validation;
   const media = await resolveClassUploads(body.uploads, env);
@@ -215,7 +217,36 @@ async function createClassRecord(request, env) {
     return json({ error: '课程已经停用', code: 'COURSE_DISABLED' }, 400);
   }
   const course = mapCourse(coursePage);
-  const properties = {
+  const properties = classRecordProperties(body, course);
+  if (media.length) properties['媒体'] = { files: media };
+  const page = await notion('/pages', env, {
+    method: 'POST',
+    body: JSON.stringify({ parent: { database_id: env.NOTION_CLASS_RECORDS_DATABASE_ID }, properties }),
+  });
+  return Response.json({ record: mapClassRecord(page, new Map([[normalizeNotionId(course.id), course]])) }, { status: 201, headers: NO_STORE_HEADERS });
+}
+
+async function updateClassRecord(request, env, recordId) {
+  requireClassesConfig(env);
+  const body = await readClassRecordRequest(request);
+  const validation = validateClassRecord(body);
+  if (validation) return validation;
+  const [page, coursePage] = await Promise.all([notion(`/pages/${recordId}`, env), notion(`/pages/${body.courseId}`, env)]);
+  validatePageParent(page, env.NOTION_CLASS_RECORDS_DATABASE_ID, 'Class record');
+  validatePageParent(coursePage, env.NOTION_COURSES_DATABASE_ID, 'Course page');
+  if (page.archived || page.in_trash) return json({ error: '记录不存在', code: 'NOT_FOUND' }, 404);
+  if (coursePage.archived || coursePage.in_trash || !coursePage.properties?.['启用']?.checkbox) {
+    return json({ error: '课程已经停用', code: 'COURSE_DISABLED' }, 400);
+  }
+  const course = mapCourse(coursePage);
+  const updated = await notion(`/pages/${page.id}`, env, {
+    method: 'PATCH', body: JSON.stringify({ properties: classRecordProperties(body, course) }),
+  });
+  return Response.json({ record: mapClassRecord(updated, new Map([[normalizeNotionId(course.id), course]])) }, { headers: NO_STORE_HEADERS });
+}
+
+function classRecordProperties(body, course) {
+  return {
     '记录': titleProperty(`${course.name} - ${body.start.slice(0, 10)}`),
     '课程': { relation: [{ id: coursePage.id }] },
     '上课时间': { date: { start: body.start, ...(body.end ? { end: body.end } : {}) } },
@@ -226,14 +257,6 @@ async function createClassRecord(request, env) {
     '老师点评': richTextProperty(body.comment),
     '地点': richTextProperty(body.location),
   };
-  if (media.length) properties['媒体'] = { files: media };
-  const page = await notion('/pages', env, {
-    method: 'POST',
-    body: JSON.stringify({ parent: { database_id: env.NOTION_CLASS_RECORDS_DATABASE_ID }, properties }),
-  });
-  return Response.json({
-    record: mapClassRecord(page, new Map([[normalizeNotionId(course.id), course]])),
-  }, { status: 201, headers: NO_STORE_HEADERS });
 }
 
 async function startClassUpload(request, env) {

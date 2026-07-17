@@ -141,7 +141,7 @@
 - 课堂媒体仅支持图片或视频，一次最多 5 个；应用不限制单文件大小，但实际容量仍受 Notion 工作区额度和平台请求限制约束。
 - 用户选择文件后，浏览器立即按 10 MiB 分片上传到 Worker，由 Worker 转发至 Notion multipart API；每个文件独立显示进度并支持失败重试。最终保存时才创建 Notion Page，并通过签名凭证写入已上传的 file ID。
 - 提交按钮防重复点击，成功后刷新日历、热力图和列表。
-- 新增记录属于家长操作：设备必须已授权，并且每次提交都重新输入家长 PIN。
+- 新增和修改记录属于家长操作：设备必须已通过家长 PIN 授权，但授权有效期内不重复询问 PIN。
 
 宝宝头像由用户上传到 Notion `孩子资料`.`头像`，浏览器只访问 `/api/class-avatar`，不能获取原始 Notion Files URL。尚未上传头像时显示粉色蝴蝶结占位图。
 
@@ -165,7 +165,8 @@
 | Method | Path | 权限 | 用途 |
 | --- | --- | --- | --- |
 | `GET` | `/api/classes?year=YYYY` | 已授权设备 | 获取课程、指定年份记录和统计数据 |
-| `POST` | `/api/classes` | 已授权设备 + 当次家长 PIN | 使用已上传 file ID 新增完整记录 |
+| `POST` | `/api/classes` | 已授权设备 | 使用已上传 file ID 新增完整记录 |
+| `PATCH` | `/api/classes/:recordId` | 已授权设备 | 修改记录字段并保留现有媒体 |
 | `POST` | `/api/class-uploads/start` | 已授权设备 | 选择文件后立即创建签名分片上传会话 |
 | `POST` | `/api/class-uploads/:uploadId/parts/:partNumber` | 已授权设备 + 上传签名 | 上传媒体分片 |
 | `POST` | `/api/class-uploads/:uploadId/complete` | 已授权设备 + 上传签名 | 完成上传并返回签名 file ID 凭证 |

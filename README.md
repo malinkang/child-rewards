@@ -118,7 +118,8 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 | `POST` | `/api/auth/login` | 使用家长 PIN 授权当前设备 30 天 |
 | `POST` | `/api/auth/logout` | 锁定当前设备 |
 | `GET` | `/api/classes?year=YYYY` | 授权后获取课程、记录及年度统计 |
-| `POST` | `/api/classes` | 使用家长 PIN 和已上传 file ID 新增完整记录 |
+| `POST` | `/api/classes` | 已授权设备使用已上传 file ID 新增完整记录 |
+| `PATCH` | `/api/classes/:recordId` | 已授权设备修改记录字段并保留现有媒体 |
 | `POST` | `/api/class-uploads/start` | 选中文件后立即创建签名分片上传会话 |
 | `POST` | `/api/class-uploads/:uploadId/parts/:partNumber` | 上传一个 10 MiB 文件分片 |
 | `POST` | `/api/class-uploads/:uploadId/complete` | 完成上传并返回签名 file ID 凭证 |
@@ -190,7 +191,7 @@ curl https://child.malinkang.com/api/gifts
 - 任务表是固定模板，不使用日期或完成状态。
 - 同一任务每天可以完成任意多次，每次完成创建一条独立记录。
 - 新设备必须通过家长 PIN 授权，签名 Cookie 有效期为 30 天。
-- 所有写入要求已授权，兑换礼物每次都要重新输入家长 PIN。
+- 所有写入要求已授权；上课记录新增和修改不重复询问 PIN，兑换礼物仍会再次校验 PIN。
 - 同一来源的写入操作至少间隔 2 秒；PIN 连续错误 5 次后暂时锁定 15 分钟。
 - 上课记录页、头像及课堂媒体只对已授权设备开放。
 - 上课记录的年度统计只计算 `已完成` 和 `试听`。

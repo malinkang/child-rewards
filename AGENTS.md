@@ -125,7 +125,8 @@ Database and singleton balance-page IDs are configured through `wrangler.toml`. 
 - `POST /api/auth/login`: validates the parent PIN and issues the 30-day HttpOnly cookie.
 - `POST /api/auth/logout`: expires the authorization cookie.
 - `GET /api/classes?year=YYYY`: returns the protected profile, courses, yearly records, and summary.
-- `POST /api/classes`: validates the parent PIN and signed completed upload credentials, then creates the record with all media file IDs in one Notion request.
+- `POST /api/classes`: requires an authorized device, validates signed completed upload credentials, and creates the record with all media file IDs in one Notion request without another PIN prompt.
+- `PATCH /api/classes/:recordId`: updates validated class record fields from an authorized device while preserving its existing media.
 - `POST /api/class-uploads/start`: creates a signed Notion multipart upload session immediately after file selection, before any class record exists.
 - `POST /api/class-uploads/:uploadId/parts/:partNumber`: accepts one authenticated 10 MiB browser chunk and forwards it to Notion.
 - `POST /api/class-uploads/:uploadId/complete`: completes the Notion upload and returns a signed 24-hour attachment credential for final page creation.

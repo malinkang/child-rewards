@@ -73,7 +73,8 @@ h2,h3 { margin:0; }
 .record-thumb img,.record-thumb video { width:100%; height:100%; object-fit:cover; pointer-events:none; }
 .record-emoji { display:grid; place-items:center; font-size:25px; }
 .media-count { position:absolute; right:3px; bottom:3px; padding:2px 5px; border-radius:999px; background:rgba(92,71,82,.78); color:#fff; font-size:10px; font-weight:900; }
-.record-status { border-radius:999px; padding:8px 11px; background:var(--yellow-soft); color:var(--muted); font-size:12px; font-weight:900; white-space:nowrap; }
+.record-edit { border:3px solid #fff; border-radius:13px; padding:7px 11px; background:var(--pink); color:#fff; font-weight:900; white-space:nowrap; box-shadow:0 5px 0 rgba(220,102,142,.18); }
+.record-edit:active { transform:translateY(2px); box-shadow:0 2px 0 rgba(220,102,142,.18); }
 .mobile-add { display:none; }
 .app-dialog { border:0; padding:0; background:transparent; }.app-dialog::backdrop { background:rgba(92,71,82,.36); backdrop-filter:blur(5px); }
 .record-form,.pin-form,.media-view-card { width:min(760px,calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; padding:24px; border:5px solid #fff; border-radius:27px; background:#fffafd; box-shadow:0 24px 65px rgba(92,71,82,.24); }
