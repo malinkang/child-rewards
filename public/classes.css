@@ -44,6 +44,8 @@ h2,h3 { margin:0; }
 .calendar-day.is-empty { background:transparent; cursor:default; }
 .day-dots { position:absolute; left:4px; right:4px; bottom:5px; display:flex; justify-content:center; gap:2px; }
 .day-dot { width:6px; height:6px; border-radius:50%; background:var(--course-color,var(--pink)); }
+.day-dot.is-planned { background:transparent; border:1.5px solid var(--course-color,var(--pink)); }
+.day-dot.is-muted { filter:grayscale(1); opacity:.38; }
 .course-legend { display:flex; flex-wrap:wrap; gap:7px; margin-top:15px; }
 .legend-item { display:inline-flex; align-items:center; gap:5px; padding:5px 8px; border-radius:999px; background:#fff; color:var(--muted); font-size:11px; font-weight:900; }
 .legend-dot { width:8px; height:8px; border-radius:50%; background:var(--course-color); }
@@ -55,6 +57,7 @@ h2,h3 { margin:0; }
 .heat-cell { width:12px; height:12px; border:0; border-radius:3px; background:#f3e8ed; padding:0; }
 .heat-cell[data-level="1"] { background:#ffc3d8; }.heat-cell[data-level="2"] { background:#f58fb1;}.heat-cell[data-level="3"] { background:#d85c88;}.heat-cell.is-selected { outline:2px solid var(--blue); outline-offset:1px; }
 .heat-label { color:var(--muted); font-size:10px; white-space:nowrap; }
+.heat-weekday { align-self:center; }
 .filter-row { display:flex; gap:8px; margin:16px 0; overflow-x:auto; padding-bottom:5px; }
 .filter-chip { flex:0 0 auto; border:3px solid #fff; border-radius:999px; background:var(--blue-soft); color:var(--muted); padding:7px 11px; font-weight:900; }
 .filter-chip.is-active { background:var(--pink); color:#fff; }

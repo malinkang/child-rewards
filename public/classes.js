@@ -15,6 +15,7 @@ let monthFilter = '全部';
 let statusFilter = '全部';
 let selectedFiles = [];
 let pinRequest = null;
+let recordDraftInitialized = false;
 
 function beijingNow() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
@@ -108,7 +109,7 @@ function renderCalendar() {
   for (let day = 1; day <= days; day += 1) {
     const key = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const dayRecords = records.filter((record) => dateKey(record.start) === key);
-    const dots = dayRecords.slice(0, 4).map((record) => `<span class="day-dot" style="--course-color:${courseColor(record.course)}"></span>`).join('');
+    const dots = dayRecords.slice(0, 4).map((record) => `<span class="day-dot ${statusDotClass(record.status)}" style="--course-color:${courseColor(record.course)}"></span>`).join('');
     cells.push(`<button class="calendar-day ${key === today ? 'is-today' : ''} ${key === selectedDate ? 'is-selected' : ''}" type="button" data-date="${key}" title="${dayRecords.length ? `${dayRecords.length} 节课` : key}"><span>${day}</span><span class="day-dots">${dots}</span></button>`);
   }
   return `<div class="calendar-header"><div><p class="eyebrow">Monthly Calendar</p><h2>本月课程</h2></div><div class="calendar-nav"><button type="button" data-month-step="-1" aria-label="上个月">‹</button><strong>${selectedYear} 年 ${selectedMonth + 1} 月</strong><button type="button" data-month-step="1" aria-label="下个月">›</button></div></div>
@@ -129,14 +130,16 @@ function renderHeatmap() {
     const key = `${selectedYear}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     const position = offset + index;
     const count = counts.get(key) || 0;
-    cells.push(`<button class="heat-cell ${key === selectedDate ? 'is-selected' : ''}" style="grid-column:${Math.floor(position / 7) + 2};grid-row:${position % 7 + 2}" type="button" data-date="${key}" data-level="${Math.min(count, 3)}" title="${key} · ${count} 节课"></button>`);
+    const courseNames = [...new Set(valid.filter((record) => dateKey(record.start) === key).map((record) => record.course?.name).filter(Boolean))];
+    cells.push(`<button class="heat-cell ${key === selectedDate ? 'is-selected' : ''}" style="grid-column:${Math.floor(position / 7) + 2};grid-row:${position % 7 + 2}" type="button" data-date="${key}" data-level="${Math.min(count, 3)}" title="${key} · ${count} 节课${courseNames.length ? ` · ${courseNames.join('、')}` : ''}"></button>`);
   }
   const monthLabels = Array.from({ length: 12 }, (_, month) => {
     const date = new Date(selectedYear, month, 1);
     const index = Math.round((date - first) / 86400000) + offset;
     return `<span class="heat-label" style="grid-column:${Math.floor(index / 7) + 2};grid-row:1">${month + 1}月</span>`;
   }).join('');
-  return `<div class="section-heading"><div><p class="eyebrow">Year In Color</p><h2>${selectedYear} 年课程热力图</h2></div><div class="heatmap-summary">${summary.completedCount || 0} 节课 · ${summary.activeDays || 0} 天 · 最忙 ${summary.busiestMonth ? `${summary.busiestMonth} 月` : '待解锁'}</div></div><div class="heatmap-scroll"><div class="heatmap">${monthLabels}${cells.join('')}</div></div>`;
+  const weekdayLabels = ['一','二','三','四','五','六','日'].map((day, index) => `<span class="heat-label heat-weekday" style="grid-column:1;grid-row:${index + 2}">${day}</span>`).join('');
+  return `<div class="section-heading"><div><p class="eyebrow">Year In Color</p><h2>${selectedYear} 年课程热力图</h2></div><div class="heatmap-summary">${summary.completedCount || 0} 节课 · ${summary.activeDays || 0} 天 · 最忙 ${summary.busiestMonth ? `${summary.busiestMonth} 月` : '待解锁'}</div></div><div class="heatmap-scroll"><div class="heatmap">${monthLabels}${weekdayLabels}${cells.join('')}</div></div>`;
 }
 
 function renderRecords() {
@@ -190,10 +193,13 @@ function selectDate(value) {
 function openRecordForm() {
   if (!authorized) return ensureAuthorized().then((ok) => { if (ok) openRecordForm(); });
   const form = document.getElementById('recordForm');
-  form.reset(); selectedFiles = []; renderSelectedFiles();
-  form.elements.start.value = toLocalInputValue(beijingNow());
-  form.elements.status.value = '已完成';
-  applyCourseDefaults();
+  if (!recordDraftInitialized) {
+    form.reset(); selectedFiles = []; renderSelectedFiles();
+    form.elements.start.value = toLocalInputValue(beijingNow());
+    form.elements.status.value = '已完成';
+    applyCourseDefaults();
+    recordDraftInitialized = true;
+  }
   document.getElementById('recordError').textContent = '';
   document.getElementById('recordDialog').showModal();
 }
@@ -214,7 +220,7 @@ async function submitRecord(event) {
     const response = await fetch('/api/classes', { method: 'POST', body: payload });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw apiError(data, '记录保存失败');
-    document.getElementById('recordDialog').close(); selectedFiles = [];
+    document.getElementById('recordDialog').close(); selectedFiles = []; form.reset(); recordDraftInitialized = false;
     await loadClasses();
     showToast(data.uploadFailures?.length ? `记录已保存，${data.uploadFailures.length} 个文件上传失败` : '上课记录已保存');
   } catch (error) { document.getElementById('recordError').textContent = error.message; }
@@ -278,7 +284,7 @@ async function ensureAuthorized() { if (authorized) return true; return Boolean(
 
 async function toggleAuthorization() {
   if (!authorized) { if (await ensureAuthorized()) await loadClasses(); return; }
-  try { await postJson('/api/auth/logout', {}); authorized = false; courses = []; records = []; selectedFiles = []; mountNav(); document.getElementById('privateContent').innerHTML = '<div class="empty-card">这台设备已经锁定。</div>'; showToast('这台设备已锁定'); }
+  try { await postJson('/api/auth/logout', {}); authorized = false; courses = []; records = []; selectedFiles = []; recordDraftInitialized = false; document.getElementById('recordForm').reset(); mountNav(); document.getElementById('privateContent').innerHTML = '<div class="empty-card">这台设备已经锁定。</div>'; showToast('这台设备已锁定'); }
   catch (error) { showToast(error.message); }
 }
 
@@ -305,6 +311,7 @@ function courseIcon(course) { if (!course?.icon) return '⭐'; return course.ico
 function courseIconText(course) { return course?.icon?.type === 'emoji' ? course.icon.value : '⭐'; }
 function courseColor(course) { return COLOR_MAP[course?.color] || COLOR_MAP['粉色']; }
 function courseSoft(course) { return `${courseColor(course)}33`; }
+function statusDotClass(status) { if (status === '计划中') return 'is-planned'; if (status === '请假' || status === '取消') return 'is-muted'; return ''; }
 function formatDateTime(value) { return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value)); }
 function toLocalInputValue(date) { const pad = (value) => String(value).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`; }
 function localInputToIso(value) { return new Date(`${value}:00+08:00`).toISOString(); }
