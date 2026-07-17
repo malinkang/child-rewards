@@ -125,7 +125,10 @@ Database and singleton balance-page IDs are configured through `wrangler.toml`. 
 - `POST /api/auth/login`: validates the parent PIN and issues the 30-day HttpOnly cookie.
 - `POST /api/auth/logout`: expires the authorization cookie.
 - `GET /api/classes?year=YYYY`: returns the protected profile, courses, yearly records, and summary.
-- `POST /api/classes`: multipart form request that creates a protected class record and uploads up to five media files.
+- `POST /api/classes`: JSON request that validates the parent PIN and creates a protected class record without media.
+- `POST /api/class-uploads/start`: validates record ownership and creates a signed Notion multipart upload session.
+- `POST /api/class-uploads/:uploadId/parts/:partNumber`: accepts one authenticated 10 MiB browser chunk and forwards it to Notion.
+- `POST /api/class-uploads/:uploadId/complete`: completes the Notion upload and appends it to the validated record's media property.
 - `GET /api/class-avatar`: proxies the configured profile image.
 - `GET /api/class-course-icon/:courseId`: proxies a validated Notion-hosted course icon.
 - `GET /api/class-media/:recordId/:index`: proxies validated record media without exposing its source URL.
@@ -138,6 +141,7 @@ When adding an endpoint, update `README.md`, this file, and proportional tests i
 ## Data Safety
 
 - Never delete, archive, reset, or rewrite real Notion records for testing.
+- Class media has no app-defined per-file size limit. Keep the five-file and image/video MIME constraints, 10 MiB chunks, signed one-hour upload sessions, visible frontend progress, and the documented Notion/platform limit caveat.
 - Inspect current Notion data before a write test; the user may edit Notion while work is in progress.
 - Create test records with an unmistakable temporary title, capture every returned page ID, and clean up only those exact IDs.
 - Re-query afterward to confirm test records are gone and the user's balance is unchanged.

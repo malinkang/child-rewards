@@ -6,7 +6,7 @@
   <title>多乐的上课记录</title>
   <link rel="preload" href="./fonts/ZCOOLKuaiLe-Regular.ttf" as="font" type="font/ttf" crossorigin />
   <link rel="stylesheet" href="./shared-nav.css?v=20260717-classes" />
-  <link rel="stylesheet" href="./classes.css?v=20260717-classes-v2" />
+  <link rel="stylesheet" href="./classes.css?v=20260717-uploads" />
 </head>
 <body>
   <nav id="siteNav" class="site-nav" aria-label="主导航"></nav>
@@ -42,12 +42,13 @@
         <label class="wide">老师点评或家长观察<textarea name="comment" maxlength="2000" rows="3" placeholder="记下值得回看的小进步"></textarea></label>
       </div>
       <section class="media-picker" aria-labelledby="mediaPickerTitle">
-        <div><strong id="mediaPickerTitle">课堂照片和视频</strong><small>最多 5 个，单个不超过 20 MB</small></div>
+        <div><strong id="mediaPickerTitle">课堂照片和视频</strong><small>最多 5 个，不限制单个文件大小；大文件会自动分片上传</small></div>
         <div class="media-buttons">
           <label class="media-button">📷 现场拍摄<input id="cameraInput" type="file" accept="image/*,video/*" capture="environment" /></label>
           <label class="media-button">🖼️ 从相册选择<input id="galleryInput" type="file" accept="image/*,video/*" multiple /></label>
         </div>
         <div id="selectedMedia" class="selected-media"></div>
+        <div id="overallUpload" class="overall-upload" hidden><span>总进度</span><progress value="0" max="100"></progress><strong>0%</strong></div>
       </section>
       <p id="recordError" class="form-error" role="alert"></p>
       <footer class="dialog-actions"><button id="cancelRecordButton" class="secondary-command" type="button">取消</button><button id="saveRecordButton" class="primary-command" type="submit">保存记录</button></footer>
@@ -67,6 +68,6 @@
     <div class="media-view-card"><header><h2 id="mediaTitle">课堂回忆</h2><button id="closeMediaButton" class="round-close" type="button" aria-label="关闭">×</button></header><div id="mediaViewer"></div></div>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="./classes.js?v=20260717-classes-v3" type="module"></script>
+  <script src="./classes.js?v=20260717-uploads" type="module"></script>
 </body>
 </html>

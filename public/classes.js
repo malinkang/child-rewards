@@ -14,6 +14,9 @@ let courseFilter = '全部';
 let monthFilter = '全部';
 let statusFilter = '全部';
 let selectedFiles = [];
+let uploadStates = [];
+let uploadInProgress = false;
+let pendingRecordId = '';
 let pinRequest = null;
 let recordDraftInitialized = false;
 
@@ -209,27 +212,93 @@ async function submitRecord(event) {
   const form = event.currentTarget;
   const pin = await requestPin('save');
   if (!pin) return;
-  const payload = new FormData(form);
-  payload.set('start', localInputToIso(form.elements.start.value));
-  if (form.elements.end.value) payload.set('end', localInputToIso(form.elements.end.value));
-  payload.set('pin', pin);
-  selectedFiles.forEach((file) => payload.append('media', file));
+  const payload = Object.fromEntries(new FormData(form));
+  payload.start = localInputToIso(form.elements.start.value);
+  payload.end = form.elements.end.value ? localInputToIso(form.elements.end.value) : '';
+  payload.duration = Number(payload.duration || 0);
+  payload.pin = pin;
   const button = document.getElementById('saveRecordButton');
-  button.disabled = true; button.textContent = '保存中...';
+  uploadInProgress = true; setRecordFormLocked(true); button.textContent = '保存记录中...';
   try {
-    const response = await fetch('/api/classes', { method: 'POST', body: payload });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw apiError(data, '记录保存失败');
-    document.getElementById('recordDialog').close(); selectedFiles = []; form.reset(); recordDraftInitialized = false;
+    if (!pendingRecordId) {
+      const response = await fetch('/api/classes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw apiError(data, '记录保存失败');
+      pendingRecordId = data.record.id;
+    }
+    if (selectedFiles.length) {
+      button.textContent = '上传媒体中...';
+      await uploadClassMedia(pendingRecordId);
+    }
+    document.getElementById('recordDialog').close(); selectedFiles = []; uploadStates = []; pendingRecordId = ''; form.reset(); recordDraftInitialized = false;
     await loadClasses();
-    showToast(data.uploadFailures?.length ? `记录已保存，${data.uploadFailures.length} 个文件上传失败` : '上课记录已保存');
+    showToast('上课记录已保存');
   } catch (error) {
     const errorElement = document.getElementById('recordError');
     errorElement.textContent = error.message;
     errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
     showToast(error.message);
   }
-  finally { button.disabled = false; button.textContent = '保存记录'; }
+  finally { uploadInProgress = false; setRecordFormLocked(false); button.textContent = '保存记录'; }
+}
+
+const UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024;
+
+async function uploadClassMedia(recordId) {
+  if (!uploadStates.length) uploadStates = selectedFiles.map((file) => ({ file, loaded: 0, status: '等待上传', nextPart: 0, session: null }));
+  renderSelectedFiles();
+  for (let index = 0; index < uploadStates.length; index += 1) {
+    const state = uploadStates[index];
+    if (state.status === '上传完成') continue;
+    const numberOfParts = Math.ceil(state.file.size / UPLOAD_CHUNK_SIZE);
+    if (!state.session) {
+      state.status = '准备上传'; renderSelectedFiles();
+      state.session = await postJson('/api/class-uploads/start', {
+        recordId, filename: state.file.name, contentType: state.file.type, size: state.file.size, numberOfParts,
+      });
+    }
+    for (let part = state.nextPart; part < numberOfParts; part += 1) {
+      const start = part * UPLOAD_CHUNK_SIZE;
+      const chunk = state.file.slice(start, Math.min(start + UPLOAD_CHUNK_SIZE, state.file.size));
+      state.status = `上传第 ${part + 1}/${numberOfParts} 片`; renderSelectedFiles();
+      await uploadChunkWithRetry(state.session, part + 1, chunk, (loaded) => {
+        state.loaded = start + loaded; renderUploadProgress();
+      });
+      state.nextPart = part + 1; state.loaded = start + chunk.size; renderUploadProgress();
+    }
+    state.status = '正在保存'; renderSelectedFiles();
+    await postJson(`/api/class-uploads/${state.session.uploadId}/complete`, { token: state.session.token });
+    state.loaded = state.file.size; state.status = '上传完成'; renderSelectedFiles();
+  }
+}
+
+async function uploadChunkWithRetry(session, partNumber, chunk, onProgress) {
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try { return await uploadChunk(session, partNumber, chunk, onProgress); }
+    catch (error) { lastError = error; if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 700 * (attempt + 1))); }
+  }
+  throw lastError;
+}
+
+function uploadChunk(session, partNumber, chunk, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api/class-uploads/${session.uploadId}/parts/${partNumber}`);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.setRequestHeader('X-Upload-Token', session.token);
+    xhr.upload.onprogress = (event) => { if (event.lengthComputable) onProgress(event.loaded); };
+    xhr.onload = () => {
+      let data = {}; try { data = JSON.parse(xhr.responseText || '{}'); } catch {}
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data); else reject(apiError(data, '文件分片上传失败'));
+    };
+    xhr.onerror = () => reject(new Error('网络中断，文件上传失败'));
+    xhr.send(chunk);
+  });
+}
+
+function setRecordFormLocked(locked) {
+  document.querySelectorAll('#recordForm input, #recordForm select, #recordForm textarea, #recordForm button').forEach((element) => { element.disabled = locked; });
 }
 
 function addFiles(fileList) {
@@ -241,9 +310,29 @@ function addFiles(fileList) {
 }
 
 function renderSelectedFiles() {
-  document.getElementById('selectedMedia').innerHTML = selectedFiles.map((file, index) => `<span class="selected-file"><span>${escapeHtml(file.name)}</span><button type="button" data-remove-file="${index}" aria-label="移除">×</button></span>`).join('');
+  document.getElementById('selectedMedia').innerHTML = selectedFiles.map((file, index) => {
+    const state = uploadStates[index]; const percent = state ? Math.round(state.loaded / file.size * 100) : 0;
+    return `<div class="selected-file"><div class="selected-file-heading"><span>${escapeHtml(file.name)}</span><small>${formatFileSize(file.size)}</small>${uploadInProgress || pendingRecordId ? '' : `<button type="button" data-remove-file="${index}" aria-label="移除">×</button>`}</div>${state ? `<div class="file-progress"><progress value="${percent}" max="100"></progress><span>${percent}% · ${escapeHtml(state.status)}</span></div>` : ''}</div>`;
+  }).join('');
   document.querySelectorAll('[data-remove-file]').forEach((button) => button.addEventListener('click', () => { selectedFiles.splice(Number(button.dataset.removeFile), 1); renderSelectedFiles(); }));
+  renderUploadProgress();
 }
+
+function renderUploadProgress() {
+  const container = document.getElementById('overallUpload');
+  if (!uploadStates.length) { container.hidden = true; return; }
+  const total = uploadStates.reduce((sum, state) => sum + state.file.size, 0);
+  const loaded = uploadStates.reduce((sum, state) => sum + state.loaded, 0);
+  const percent = total ? Math.round(loaded / total * 100) : 0;
+  container.hidden = false; container.querySelector('progress').value = percent; container.querySelector('strong').textContent = `${percent}%`;
+  uploadStates.forEach((state, index) => {
+    const row = document.querySelectorAll('.selected-file')[index]; if (!row) return;
+    const value = state.file.size ? Math.round(state.loaded / state.file.size * 100) : 0;
+    row.querySelector('progress').value = value; row.querySelector('.file-progress span').textContent = `${value}% · ${state.status}`;
+  });
+}
+
+function formatFileSize(bytes) { const units = ['B', 'KB', 'MB', 'GB']; let value = bytes; let unit = 0; while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; } return `${value.toFixed(unit ? 1 : 0)} ${units[unit]}`; }
 
 function populateCourseInput() {
   const input = document.getElementById('courseInput');
@@ -289,7 +378,7 @@ async function ensureAuthorized() { if (authorized) return true; return Boolean(
 
 async function toggleAuthorization() {
   if (!authorized) { if (await ensureAuthorized()) await loadClasses(); return; }
-  try { await postJson('/api/auth/logout', {}); authorized = false; courses = []; records = []; selectedFiles = []; recordDraftInitialized = false; document.getElementById('recordForm').reset(); mountNav(); document.getElementById('privateContent').innerHTML = '<div class="empty-card">这台设备已经锁定。</div>'; showToast('这台设备已锁定'); }
+  try { await postJson('/api/auth/logout', {}); authorized = false; courses = []; records = []; selectedFiles = []; uploadStates = []; pendingRecordId = ''; recordDraftInitialized = false; document.getElementById('recordForm').reset(); mountNav(); document.getElementById('privateContent').innerHTML = '<div class="empty-card">这台设备已经锁定。</div>'; showToast('这台设备已锁定'); }
   catch (error) { showToast(error.message); }
 }
 
@@ -303,7 +392,7 @@ function setupEvents() {
   document.getElementById('addRecordButton').addEventListener('click', openRecordForm); document.getElementById('mobileAddButton').addEventListener('click', openRecordForm);
   document.getElementById('yearSelect').addEventListener('change', (event) => { selectedYear = Number(event.target.value); selectedMonth = selectedYear === beijingNow().getFullYear() ? beijingNow().getMonth() : 0; selectedDate = ''; loadClasses(); });
   document.getElementById('recordForm').addEventListener('submit', submitRecord); document.getElementById('courseInput').addEventListener('change', applyCourseDefaults);
-  document.getElementById('closeRecordButton').addEventListener('click', () => document.getElementById('recordDialog').close()); document.getElementById('cancelRecordButton').addEventListener('click', () => document.getElementById('recordDialog').close());
+  document.getElementById('closeRecordButton').addEventListener('click', () => { if (!uploadInProgress) document.getElementById('recordDialog').close(); }); document.getElementById('cancelRecordButton').addEventListener('click', () => { if (!uploadInProgress) document.getElementById('recordDialog').close(); });
   document.getElementById('cameraInput').addEventListener('change', (event) => addFiles(event.target.files)); document.getElementById('galleryInput').addEventListener('change', (event) => addFiles(event.target.files));
   document.getElementById('pinForm').addEventListener('submit', submitPin); document.getElementById('cancelPinButton').addEventListener('click', () => finishPin(null));
   document.getElementById('pinDialog').addEventListener('cancel', (event) => { event.preventDefault(); finishPin(null); });
