@@ -268,16 +268,22 @@ const UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024;
 async function processUploadQueue() {
   if (uploadInProgress) return;
   uploadInProgress = true;
-  for (const state of uploadStates) {
-    if (state.status === '上传完成' || state.status === '上传失败') continue;
-    try {
-      await uploadClassMedia(state);
-    } catch (error) {
-      state.status = '上传失败'; state.error = error.message; renderSelectedFiles();
+  try {
+    while (true) {
+      const pending = uploadStates.filter((state) => state.status === '等待上传');
+      if (!pending.length) break;
+      await Promise.all(pending.map(async (state) => {
+        try {
+          await uploadClassMedia(state);
+        } catch (error) {
+          state.status = '上传失败'; state.error = error.message; renderSelectedFiles();
+        }
+      }));
     }
+  } finally {
+    uploadInProgress = false;
+    renderSelectedFiles();
   }
-  uploadInProgress = false;
-  renderSelectedFiles();
 }
 
 async function uploadClassMedia(state) {
