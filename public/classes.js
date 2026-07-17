@@ -98,15 +98,14 @@ function render() {
 }
 
 function renderProfile() {
-  const favorite = courses.find((course) => course.id === summary.favoriteCourseId);
+  const countedRecords = records.filter(isCountedRecord);
+  const courseStats = courses.map((course) => ({
+    course,
+    count: countedRecords.filter((record) => normalizeId(record.courseId) === normalizeId(course.id)).length,
+  }));
   return `<div class="avatar-wrap">${profile.avatarUrl ? `<img src="${profile.avatarUrl}" alt="${escapeHtml(profile.name)}的头像" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="avatar-placeholder" hidden>🎀</span>` : '<span class="avatar-placeholder">🎀</span>'}</div>
     <h2 class="profile-name">${escapeHtml(profile.name)}的课程手账</h2>
-    <div class="profile-stats">
-      <div class="profile-stat"><strong>${summary.completedCount || 0}</strong><span>完成课程</span></div>
-      <div class="profile-stat"><strong>${summary.activeDays || 0}</strong><span>上课天数</span></div>
-      <div class="profile-stat"><strong>${favorite ? `${courseIcon(favorite)} ${escapeHtml(favorite.name)}` : '待解锁'}</strong><span>最常参加</span></div>
-      <div class="profile-stat"><strong>${summary.currentWeekStreak || 0}</strong><span>连续上课周</span></div>
-    </div>`;
+    <div class="profile-stats">${courseStats.map(({ course, count }) => `<div class="profile-stat"><span>${courseIcon(course)} ${escapeHtml(course.name)}</span><strong>${count}<small> 节</small></strong></div>`).join('')}</div>`;
 }
 
 function renderCalendar() {
@@ -482,6 +481,7 @@ function courseIcon(course) { if (!course?.icon) return '⭐'; return course.ico
 function courseIconText(course) { return course?.icon?.type === 'emoji' ? course.icon.value : '⭐'; }
 function courseColor(course) { return COLOR_MAP[course?.color] || COLOR_MAP['粉色']; }
 function courseSoft(course) { return `${courseColor(course)}33`; }
+function normalizeId(value) { return String(value || '').replaceAll('-', ''); }
 function statusDotClass(status) { if (status === '计划中') return 'is-planned'; if (status === '请假' || status === '取消') return 'is-muted'; return ''; }
 function formatDateTime(value) { return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value)); }
 function formatRecordTime(record) {

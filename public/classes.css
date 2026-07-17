@@ -29,8 +29,10 @@ h2,h3 { margin:0; }
 .profile-name { color:var(--pink-deep); font-size:31px; }
 .profile-stats { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; width:100%; }
 .profile-stat { padding:12px; border:3px solid #fff; border-radius:16px; background:rgba(255,255,255,.72); text-align:center; }
+.profile-stat:last-child:nth-child(odd) { grid-column:1/-1; }
 .profile-stat strong { display:block; color:var(--pink-deep); font-size:25px; }
-.profile-stat span { color:var(--muted); font-size:12px; }
+.profile-stat strong small { font-size:12px; }
+.profile-stat span { display:block; margin-bottom:3px; color:var(--muted); font-size:13px; font-weight:900; }
 .calendar-board { padding:22px; }
 .section-heading,.calendar-header,.records-heading { display:flex; align-items:center; justify-content:space-between; gap:14px; }
 .calendar-nav { display:flex; align-items:center; gap:8px; }
