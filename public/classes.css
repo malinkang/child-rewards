@@ -53,8 +53,8 @@ h2,h3 { margin:0; }
 .heatmap-board,.records-board { width:100%; max-width:100%; padding:22px; overflow:hidden; }
 .heatmap-summary { color:var(--muted); font-size:13px; font-weight:900; }
 .heatmap-scroll { width:100%; max-width:100%; margin-top:17px; overflow-x:auto; padding-bottom:6px; }
-.heatmap { position:relative; display:grid; grid-template-columns:25px repeat(53,12px); grid-template-rows:18px repeat(7,12px); gap:3px; min-width:820px; }
-.heat-cell { width:12px; height:12px; border:0; border-radius:3px; background:#f3e8ed; padding:0; }
+.heatmap { position:relative; display:grid; grid-template-columns:25px repeat(53,minmax(0,1fr)); grid-template-rows:18px repeat(7,auto); gap:3px; width:100%; min-width:820px; }
+.heat-cell { width:100%; height:auto; aspect-ratio:1; border:0; border-radius:3px; background:#f3e8ed; padding:0; }
 .heat-cell[data-level="1"] { background:#ffc3d8; }.heat-cell[data-level="2"] { background:#f58fb1;}.heat-cell[data-level="3"] { background:#d85c88;}.heat-cell.is-selected { outline:2px solid var(--blue); outline-offset:1px; }
 .heat-label { color:var(--muted); font-size:10px; white-space:nowrap; }
 .heat-weekday { align-self:center; }
