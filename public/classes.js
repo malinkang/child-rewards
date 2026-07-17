@@ -18,6 +18,9 @@ let uploadStates = [];
 let uploadInProgress = false;
 let pinRequest = null;
 let recordDraftInitialized = false;
+let viewerMedia = [];
+let viewerIndex = 0;
+let viewerTouchStart = 0;
 
 function beijingNow() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
@@ -163,8 +166,9 @@ function renderRecords() {
 
 function renderRecord(record) {
   const course = record.course || courses.find((item) => item.id === record.courseId);
-  const media = (record.media || []).slice(0, 3).map((item, index) => `<button class="record-thumb" type="button" data-media-record="${record.id}" data-media-index="${index}" aria-label="查看 ${escapeHtml(item.name)}">${item.type === 'video' ? `<video src="${item.url}#t=0.1" muted preload="metadata"></video>` : `<img src="${item.url}" alt="" loading="lazy">`}</button>`).join('');
-  return `<article class="class-record ${media ? '' : 'without-media'}"><div class="record-text"><div class="record-title">${escapeHtml(course?.name || '课程')}<span class="status-pill">${escapeHtml(record.status)}</span></div><div class="record-meta">${formatDateTime(record.start)}${record.duration ? ` · ${record.duration} 分钟` : ''}${record.location ? ` · ${escapeHtml(record.location)}` : ''}</div>${record.content ? `<div class="record-copy">${escapeHtml(record.content)}</div>` : ''}${record.comment ? `<div class="record-copy">💬 ${escapeHtml(record.comment)}</div>` : ''}</div>${media ? `<div class="record-media">${media}${record.media.length > 3 ? `<span class="media-more">+${record.media.length - 3}</span>` : ''}</div>` : ''}</article>`;
+  const cover = record.media?.[0];
+  const thumbnail = cover ? `<button class="record-thumb" type="button" data-media-record="${record.id}" data-media-index="0" aria-label="查看 ${escapeHtml(cover.name)}">${cover.type === 'video' ? `<video src="${cover.url}#t=0.1" muted preload="metadata"></video>` : `<img src="${cover.url}" alt="" loading="lazy">`}${record.media.length > 1 ? `<span class="media-count">+${record.media.length - 1}</span>` : ''}</button>` : `<div class="record-thumb record-emoji" aria-hidden="true">${escapeHtml(courseIconText(course))}</div>`;
+  return `<article class="class-record ${cover ? 'has-media' : ''}">${thumbnail}<div class="record-text"><div class="record-title">${escapeHtml(course?.name || '课程')}</div><div class="record-meta">${formatDateTime(record.start)}${record.duration ? ` · ${record.duration} 分钟` : ''}${record.location ? ` · ${escapeHtml(record.location)}` : ''}</div>${record.content ? `<div class="record-copy">${escapeHtml(record.content)}</div>` : ''}${record.comment ? `<div class="record-copy">💬 ${escapeHtml(record.comment)}</div>` : ''}</div><span class="record-status">${escapeHtml(record.status)}</span></article>`;
 }
 
 function bindDynamicEvents() {
@@ -358,13 +362,28 @@ function applyCourseDefaults() {
 }
 
 function openMedia(recordId, index) {
-  const record = records.find((item) => item.id === recordId); const media = record?.media?.[index]; if (!media) return;
-  document.getElementById('mediaTitle').textContent = media.name || '课堂回忆';
-  document.getElementById('mediaViewer').innerHTML = media.type === 'video' ? `<video src="${media.url}" controls autoplay playsinline></video>` : `<img src="${media.url}" alt="${escapeHtml(media.name)}">`;
+  const record = records.find((item) => item.id === recordId); if (!record?.media?.length) return;
+  viewerMedia = record.media; viewerIndex = Math.max(0, Math.min(index, viewerMedia.length - 1));
+  renderMediaViewer();
   document.getElementById('mediaDialog').showModal();
 }
 
-function closeMedia() { document.getElementById('mediaViewer').innerHTML = ''; document.getElementById('mediaDialog').close(); }
+function renderMediaViewer() {
+  const media = viewerMedia[viewerIndex]; if (!media) return;
+  document.getElementById('mediaTitle').textContent = media.name || '课堂回忆';
+  document.getElementById('mediaViewer').innerHTML = media.type === 'video' ? `<video src="${media.url}" controls autoplay playsinline></video>` : `<img src="${media.url}" alt="${escapeHtml(media.name)}">`;
+  document.getElementById('mediaPosition').textContent = viewerMedia.length > 1 ? `${viewerIndex + 1} / ${viewerMedia.length}` : '';
+  document.getElementById('previousMediaButton').hidden = viewerMedia.length < 2;
+  document.getElementById('nextMediaButton').hidden = viewerMedia.length < 2;
+}
+
+function changeMedia(step) {
+  if (viewerMedia.length < 2) return;
+  viewerIndex = (viewerIndex + step + viewerMedia.length) % viewerMedia.length;
+  renderMediaViewer();
+}
+
+function closeMedia() { document.getElementById('mediaViewer').innerHTML = ''; viewerMedia = []; document.getElementById('mediaDialog').close(); }
 
 function requestPin(mode) {
   if (pinRequest) return Promise.resolve(null);
@@ -407,6 +426,9 @@ function setupEvents() {
   document.getElementById('pinForm').addEventListener('submit', submitPin); document.getElementById('cancelPinButton').addEventListener('click', () => finishPin(null));
   document.getElementById('pinDialog').addEventListener('cancel', (event) => { event.preventDefault(); finishPin(null); });
   document.getElementById('closeMediaButton').addEventListener('click', closeMedia); document.getElementById('mediaDialog').addEventListener('cancel', (event) => { event.preventDefault(); closeMedia(); });
+  document.getElementById('previousMediaButton').addEventListener('click', () => changeMedia(-1)); document.getElementById('nextMediaButton').addEventListener('click', () => changeMedia(1));
+  document.getElementById('mediaViewer').addEventListener('touchstart', (event) => { viewerTouchStart = event.changedTouches[0].clientX; }, { passive: true });
+  document.getElementById('mediaViewer').addEventListener('touchend', (event) => { const distance = event.changedTouches[0].clientX - viewerTouchStart; if (Math.abs(distance) > 45) changeMedia(distance < 0 ? 1 : -1); }, { passive: true });
 }
 
 function initializeYears() { const current = beijingNow().getFullYear(); document.getElementById('yearSelect').innerHTML = Array.from({ length: current - 2021 }, (_, index) => current - index).map((year) => `<option value="${year}">${year}</option>`).join(''); }
