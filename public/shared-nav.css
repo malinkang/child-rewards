@@ -1,0 +1,26 @@
+.site-nav { position: relative; z-index: 30; width: min(1120px, calc(100% - 32px)); margin: 18px auto 0; }
+.site-nav-inner { display: flex; align-items: center; min-height: 64px; padding: 9px 12px 9px 17px; border: 4px solid #fff; border-radius: 22px; background: rgba(255,253,253,.94); box-shadow: 0 8px 0 rgba(126,77,101,.08), 0 16px 30px rgba(126,77,101,.1); }
+.site-brand { display: inline-flex; align-items: center; gap: 8px; color: #dc668e; text-decoration: none; white-space: nowrap; }
+.site-brand span { font-size: 25px; }
+.site-brand strong { font-size: 18px; }
+.nav-menu { display: flex; align-items: center; justify-content: space-between; flex: 1; min-width: 0; margin-left: 25px; }
+.nav-links, .nav-actions { display: flex; align-items: center; gap: 8px; }
+.nav-link { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 13px; border-radius: 13px; color: #8d7581; text-decoration: none; font-weight: 900; }
+.nav-link:hover { background: #fff3bd; color: #5c4752; }
+.nav-link.is-current { background: #ffd9e7; color: #dc668e; box-shadow: inset 0 0 0 2px #fff; }
+.nav-icon-button, .nav-menu-button { display: grid; place-items: center; width: 42px; height: 42px; border: 3px solid #fff; border-radius: 50%; background: #dff5fb; box-shadow: 0 5px 0 rgba(105,189,218,.15); font: inherit; font-size: 19px; cursor: pointer; }
+.nav-icon-button:first-child { background: #ffd9e7; }
+.nav-menu-button { display: none; margin-left: auto; border-radius: 13px; color: #5c4752; }
+
+@media (max-width: 720px) {
+  body.nav-open { overflow: hidden; }
+  .site-nav { width: min(100% - 20px, 1120px); margin-top: 10px; }
+  .site-nav-inner { position: relative; min-height: 58px; padding: 7px 9px 7px 13px; border-radius: 19px; }
+  .site-brand strong { font-size: 16px; }
+  .nav-menu-button { display: grid; }
+  .nav-menu { position: absolute; top: calc(100% + 8px); left: 0; right: 0; display: none; align-items: stretch; margin: 0; padding: 12px; border: 4px solid #fff; border-radius: 20px; background: #fffafd; box-shadow: 0 16px 35px rgba(126,77,101,.18); }
+  .nav-menu.is-open { display: grid; gap: 12px; }
+  .nav-links { display: grid; gap: 7px; }
+  .nav-link { width: 100%; }
+  .nav-actions { justify-content: flex-end; padding-top: 9px; border-top: 2px dashed #ffd9e7; }
+}

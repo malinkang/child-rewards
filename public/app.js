@@ -1,3 +1,5 @@
+import { mountSharedNav } from './shared-nav.js';
+
 let tasks = [];
 let ledger = [];
 let gifts = [];
@@ -405,12 +407,18 @@ async function toggleAuthorization() {
 }
 
 function updateAuthButton() {
-  const button = document.getElementById('authButton');
-  const label = !authLoaded ? '正在检查设备权限' : authorized ? '锁定此设备' : '解锁此设备';
-  document.getElementById('authIcon').textContent = authorized ? '🔓' : '🔒';
-  button.setAttribute('aria-label', label);
-  button.title = label;
-  button.setAttribute('aria-pressed', String(authorized));
+  renderNavigation();
+}
+
+function renderNavigation() {
+  mountSharedNav({
+    current: 'home',
+    authorized,
+    soundEnabled,
+    onAuthToggle: toggleAuthorization,
+    onSoundToggle: toggleSound,
+    onProtectedNavigate: ensureAuthorized,
+  });
 }
 
 function handleAuthError(error) {
@@ -611,10 +619,8 @@ function showToast(message) {
 }
 
 function setupEvents() {
+  renderNavigation();
   updateSoundButton();
-  updateAuthButton();
-  document.getElementById('authButton').addEventListener('click', toggleAuthorization);
-  document.getElementById('soundToggle').addEventListener('click', toggleSound);
   document.addEventListener('pointerdown', (event) => {
     if (!event.target.closest('#soundToggle')) playPendingWelcome();
   }, { capture: true });

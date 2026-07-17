@@ -66,6 +66,38 @@ Property names are exact API contracts. If a property is renamed in Notion, upda
 - `说明`: rich_text
 - `排序`: number
 
+### 孩子资料
+
+- `姓名`: title
+- `头像`: files
+- `生日`: date
+- `启用`: checkbox
+- The database contains one active profile row configured by `NOTION_CHILD_PROFILE_PAGE_ID`.
+
+### 课外课程
+
+- `课程`: title
+- Page icon: emoji or Notion-hosted image
+- `颜色`: select
+- `老师`: rich_text
+- `地点`: rich_text
+- `默认时长`: number
+- `启用`: checkbox
+- `排序`: number
+
+### 上课记录
+
+- `记录`: title
+- `课程`: relation to 课外课程
+- `上课时间`: date
+- `状态`: status (`计划中`, `已完成`, `请假`, `取消`, `试听`)
+- `时长`: number
+- `上课内容`: rich_text
+- `课堂表现`: select
+- `老师点评`: rich_text
+- `地点`: rich_text
+- `媒体`: files
+
 Database and singleton balance-page IDs are configured through `wrangler.toml`. The API version is `2022-06-28` for database/page operations and `2025-09-03` for Notion file-upload operations.
 
 ## Business Invariants
@@ -81,6 +113,9 @@ Database and singleton balance-page IDs are configured through `wrangler.toml`. 
 - Keep all write endpoints same-origin protected and require a valid signed device cookie.
 - Device authorization lasts 30 days. Gift redemption additionally requires the current parent PIN on every attempt.
 - Keep PIN comparison timing-safe, throttle failed PIN attempts, and enforce a short server-side write cooldown.
+- Class profile, records, avatar, and media are private and require a valid device cookie for every read.
+- Never return Notion class media URLs to the browser. Proxy media only after validating page/database ownership and preserve video Range headers.
+- Class heatmap and summary statistics count only `已完成` and `试听` records in Beijing time.
 
 ## API Surface
 
@@ -89,6 +124,11 @@ Database and singleton balance-page IDs are configured through `wrangler.toml`. 
 - `GET /api/auth`: returns whether the current device has a valid signed authorization cookie.
 - `POST /api/auth/login`: validates the parent PIN and issues the 30-day HttpOnly cookie.
 - `POST /api/auth/logout`: expires the authorization cookie.
+- `GET /api/classes?year=YYYY`: returns the protected profile, courses, yearly records, and summary.
+- `POST /api/classes`: multipart form request that creates a protected class record and uploads up to five media files.
+- `GET /api/class-avatar`: proxies the configured profile image.
+- `GET /api/class-course-icon/:courseId`: proxies a validated Notion-hosted course icon.
+- `GET /api/class-media/:recordId/:index`: proxies validated record media without exposing its source URL.
 - `POST /api/earn`: body `{ taskId }`; validates the task and creates one earning record.
 - `POST /api/spend`: JSON without media or multipart form data with `item`, `stars`, `pin`, and repeated `media` files.
 - Other `/api/*` routes return 404. Static requests fall through to `env.ASSETS`.
@@ -113,6 +153,8 @@ When adding an endpoint, update `README.md`, this file, and proportional tests i
 - History entries with media show a thumbnail and open the shared media viewer.
 - Gift media and reward-history media use the same viewer behavior.
 - Locked devices may read data but must show locked task and redemption actions. Never treat frontend state as authorization.
+- Shared navigation is rendered by `public/shared-nav.js`; add future sections to its centralized item list.
+- The classes page must clear private in-memory data after device lock and keep horizontal overflow inside the heatmap scroller.
 - Fixed voice clips live in `public/audio/`; do not add a runtime TTS dependency without explicit approval.
 - Choose welcome audio only after `/api/rewards` resolves. Use today's positive ledger entries to select not-started or in-progress audio.
 - Play welcome audio at most once per Beijing date. If autoplay is blocked, defer it until the first user gesture.

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>多乐的上课记录</title>
+  <link rel="preload" href="./fonts/ZCOOLKuaiLe-Regular.ttf" as="font" type="font/ttf" crossorigin />
+  <link rel="stylesheet" href="./shared-nav.css?v=20260717-classes" />
+  <link rel="stylesheet" href="./classes.css?v=20260717-classes" />
+</head>
+<body>
+  <nav id="siteNav" class="site-nav" aria-label="主导航"></nav>
+  <main class="classes-shell">
+    <header class="page-toolbar">
+      <div><p class="eyebrow">Class Diary</p><h1>多乐的上课记录</h1></div>
+      <div class="toolbar-actions">
+        <label class="year-control"><span>年份</span><select id="yearSelect"></select></label>
+        <button id="refreshButton" class="icon-command" type="button" title="刷新" aria-label="刷新">↻</button>
+        <button id="addRecordButton" class="primary-command" type="button"><span>＋</span>新增记录</button>
+      </div>
+    </header>
+
+    <section id="privateContent" class="private-content" aria-live="polite">
+      <div class="loading-card">正在打开多乐的课程手账...</div>
+    </section>
+  </main>
+
+  <button id="mobileAddButton" class="mobile-add" type="button"><span>＋</span>新增记录</button>
+
+  <dialog id="recordDialog" class="app-dialog record-dialog">
+    <form id="recordForm" class="record-form">
+      <header class="dialog-heading"><div><p class="eyebrow">New Memory</p><h2>新增上课记录</h2></div><button id="closeRecordButton" class="round-close" type="button" aria-label="关闭">×</button></header>
+      <div class="form-grid">
+        <label>课程<select name="courseId" id="courseInput" required></select></label>
+        <label>状态<select name="status" required><option>已完成</option><option>计划中</option><option>试听</option><option>请假</option><option>取消</option></select></label>
+        <label>开始时间<input name="start" type="datetime-local" required /></label>
+        <label>结束时间<input name="end" type="datetime-local" /></label>
+        <label>时长（分钟）<input name="duration" type="number" min="0" max="480" /></label>
+        <label>课堂表现<select name="performance"><option value="">未选择</option><option>很开心</option><option>认真</option><option>有进步</option><option>需要鼓励</option></select></label>
+        <label class="wide">地点<input name="location" maxlength="200" placeholder="教室或场馆" /></label>
+        <label class="wide">上课内容<textarea name="content" maxlength="2000" rows="3" placeholder="今天学了什么？"></textarea></label>
+        <label class="wide">老师点评或家长观察<textarea name="comment" maxlength="2000" rows="3" placeholder="记下值得回看的小进步"></textarea></label>
+      </div>
+      <section class="media-picker" aria-labelledby="mediaPickerTitle">
+        <div><strong id="mediaPickerTitle">课堂照片和视频</strong><small>最多 5 个，单个不超过 20 MB</small></div>
+        <div class="media-buttons">
+          <label class="media-button">📷 现场拍摄<input id="cameraInput" type="file" accept="image/*,video/*" capture="environment" /></label>
+          <label class="media-button">🖼️ 从相册选择<input id="galleryInput" type="file" accept="image/*,video/*" multiple /></label>
+        </div>
+        <div id="selectedMedia" class="selected-media"></div>
+      </section>
+      <p id="recordError" class="form-error" role="alert"></p>
+      <footer class="dialog-actions"><button id="cancelRecordButton" class="secondary-command" type="button">取消</button><button id="saveRecordButton" class="primary-command" type="submit">保存记录</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="pinDialog" class="app-dialog pin-dialog">
+    <form id="pinForm" class="pin-form">
+      <span class="pin-symbol" aria-hidden="true">🔐</span><h2 id="pinTitle">家长解锁</h2><p id="pinHint">输入家长 PIN 后查看上课记录。</p>
+      <label>家长 PIN<input id="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="12" required /></label>
+      <p id="pinError" class="form-error" role="alert"></p>
+      <div class="dialog-actions"><button id="cancelPinButton" class="secondary-command" type="button">取消</button><button class="primary-command" type="submit">确认</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="mediaDialog" class="app-dialog media-dialog">
+    <div class="media-view-card"><header><h2 id="mediaTitle">课堂回忆</h2><button id="closeMediaButton" class="round-close" type="button" aria-label="关闭">×</button></header><div id="mediaViewer"></div></div>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="./classes.js?v=20260717-classes" type="module"></script>
+</body>
+</html>

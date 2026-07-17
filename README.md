@@ -16,6 +16,9 @@ Browser
                  ├─ 每日任务
                  ├─ 星星记录
                  ├─ 余额统计
+                 ├─ 孩子资料
+                 ├─ 课外课程
+                 ├─ 上课记录
                  └─ 甜心礼品屋
 ```
 
@@ -73,6 +76,38 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 | `说明` | Rich text | 礼品说明 |
 | `排序` | Number | 数字越小越靠前 |
 
+### 孩子资料
+
+数据库只保留一条有效记录：`姓名`（Title）、`头像`（Files）、`生日`（Date）、`启用`（Checkbox）。头像不会作为公开静态资源部署，只能通过授权后的 Worker 代理读取。
+
+### 课外课程
+
+| 属性 | 类型 | 用途 |
+| --- | --- | --- |
+| `课程` | Title | 课程名称 |
+| Page icon | Notion icon | 课程 emoji 或图片图标 |
+| `颜色` | Select | 粉色、蓝色、黄色、薄荷绿、紫色 |
+| `老师` | Rich text | 默认老师 |
+| `地点` | Rich text | 默认地点 |
+| `默认时长` | Number | 默认分钟数 |
+| `启用` | Checkbox | 是否在网页展示 |
+| `排序` | Number | 展示顺序 |
+
+### 上课记录
+
+| 属性 | 类型 | 用途 |
+| --- | --- | --- |
+| `记录` | Title | `课程名 - YYYY-MM-DD` |
+| `课程` | Relation | 关联课外课程 |
+| `上课时间` | Date | 开始时间及可选结束时间 |
+| `状态` | Status | 计划中、已完成、请假、取消、试听 |
+| `时长` | Number | 实际分钟数 |
+| `上课内容` | Rich text | 本节课内容 |
+| `课堂表现` | Select | 很开心、认真、有进步、需要鼓励 |
+| `老师点评` | Rich text | 老师或家长记录 |
+| `地点` | Rich text | 当次地点 |
+| `媒体` | Files | 最多 5 个课堂图片或视频 |
+
 ## API
 
 | Method | Path | Description |
@@ -82,6 +117,11 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 | `GET` | `/api/auth` | 获取当前设备授权状态 |
 | `POST` | `/api/auth/login` | 使用家长 PIN 授权当前设备 30 天 |
 | `POST` | `/api/auth/logout` | 锁定当前设备 |
+| `GET` | `/api/classes?year=YYYY` | 授权后获取课程、记录及年度统计 |
+| `POST` | `/api/classes` | 使用家长 PIN 新增记录及媒体 |
+| `GET` | `/api/class-avatar` | 授权代理孩子头像 |
+| `GET` | `/api/class-course-icon/:courseId` | 授权代理课程图片图标 |
+| `GET` | `/api/class-media/:recordId/:index` | 授权代理课堂图片或视频 |
 | `POST` | `/api/earn` | 完成一次任务并写入一条星星记录 |
 | `POST` | `/api/spend` | 使用家长 PIN 兑换礼品，可同时上传照片或视频 |
 
@@ -96,6 +136,10 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 - `NOTION_LEDGER_DATABASE_ID`
 - `NOTION_BALANCE_DATABASE_ID`
 - `NOTION_BALANCE_PAGE_ID`
+- `NOTION_CHILD_PROFILE_DATABASE_ID`
+- `NOTION_CHILD_PROFILE_PAGE_ID`
+- `NOTION_COURSES_DATABASE_ID`
+- `NOTION_CLASS_RECORDS_DATABASE_ID`
 - `NOTION_VERSION`
 
 Secret：
@@ -145,6 +189,9 @@ curl https://child.malinkang.com/api/gifts
 - 新设备必须通过家长 PIN 授权，签名 Cookie 有效期为 30 天。
 - 所有写入要求已授权，兑换礼物每次都要重新输入家长 PIN。
 - 同一来源的写入操作至少间隔 2 秒；PIN 连续错误 5 次后暂时锁定 15 分钟。
+- 上课记录页、头像及课堂媒体只对已授权设备开放。
+- 上课记录的年度统计只计算 `已完成` 和 `试听`。
+- 媒体 URL 不返回浏览器，Worker 校验记录归属后代理文件和视频 Range 请求。
 - 归档任务不能继续获得星星。
 - 每条新记录必须关联唯一余额统计行。
 - 余额只读取余额统计表的 `当前余额` Rollup。

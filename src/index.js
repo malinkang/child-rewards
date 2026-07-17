@@ -18,6 +18,23 @@ export default {
       if (url.pathname === '/api/rewards' && request.method === 'GET') {
         return getRewards(env);
       }
+      if (url.pathname === '/api/classes' && request.method === 'GET') {
+        return requireAuthorized(request, env, () => getClasses(url, env));
+      }
+      if (url.pathname === '/api/classes' && request.method === 'POST') {
+        return handleWrite(request, () => requireAuthorizedWrite(request, env, () => createClassRecord(request, env)));
+      }
+      if (url.pathname === '/api/class-avatar' && request.method === 'GET') {
+        return requireAuthorized(request, env, () => proxyProfileAvatar(request, env));
+      }
+      const courseIconMatch = url.pathname.match(/^\/api\/class-course-icon\/([0-9a-f-]{32,36})$/i);
+      if (courseIconMatch && request.method === 'GET') {
+        return requireAuthorized(request, env, () => proxyCourseIcon(request, env, courseIconMatch[1]));
+      }
+      const classMediaMatch = url.pathname.match(/^\/api\/class-media\/([0-9a-f-]{32,36})\/(\d+)$/i);
+      if (classMediaMatch && request.method === 'GET') {
+        return requireAuthorized(request, env, () => proxyClassMedia(request, env, classMediaMatch[1], Number(classMediaMatch[2])));
+      }
       if (url.pathname === '/api/auth' && request.method === 'GET') {
         return getAuthStatus(request, env);
       }
@@ -36,6 +53,9 @@ export default {
       if (url.pathname.startsWith('/api/')) {
         return json({ error: 'Not found' }, 404);
       }
+      if (url.pathname === '/classes' || url.pathname === '/classes/') {
+        return env.ASSETS.fetch(new Request(new URL('/classes.html', request.url), request));
+      }
       return env.ASSETS.fetch(request);
     } catch (error) {
       console.error('Worker request failed', error instanceof Error ? error.message : 'unknown_error');
@@ -48,6 +68,14 @@ async function handleWrite(request, action) {
   const origin = request.headers.get('Origin');
   if (origin !== new URL(request.url).origin) {
     return json({ error: 'Forbidden' }, 403);
+  }
+  return action();
+}
+
+async function requireAuthorized(request, env, action) {
+  requireAuthConfig(env);
+  if (!await isAuthorized(request, env)) {
+    return json({ error: '请先输入家长 PIN 解锁', code: 'AUTH_REQUIRED' }, 401);
   }
   return action();
 }
@@ -126,6 +154,136 @@ async function getRewards(env) {
   const tasks = taskPages.map(mapTask).filter((task) => task.name && task.stars > 0);
   const ledger = recordPages.map(mapLedgerEntry);
   return Response.json({ tasks, ledger, balance }, { headers: NO_STORE_HEADERS });
+}
+
+async function getClasses(url, env) {
+  requireClassesConfig(env);
+  const currentYear = Number(shanghaiDateParts().year);
+  const year = Number(url.searchParams.get('year') || currentYear);
+  if (!Number.isInteger(year) || year < 2022 || year > currentYear + 1) {
+    return json({ error: '年份无效', code: 'INVALID_YEAR' }, 400);
+  }
+  const { start, end } = shanghaiYearRange(year);
+  const [profilePage, coursePages, recordPages] = await Promise.all([
+    notion(`/pages/${env.NOTION_CHILD_PROFILE_PAGE_ID}`, env),
+    queryAll(env.NOTION_COURSES_DATABASE_ID, env, {
+      filter: { property: '启用', checkbox: { equals: true } },
+      sorts: [{ property: '排序', direction: 'ascending' }],
+    }),
+    queryAll(env.NOTION_CLASS_RECORDS_DATABASE_ID, env, {
+      filter: { property: '上课时间', date: { on_or_after: start, before: end } },
+      sorts: [{ property: '上课时间', direction: 'descending' }],
+    }),
+  ]);
+  validatePageParent(profilePage, env.NOTION_CHILD_PROFILE_DATABASE_ID, 'Profile page');
+  const courses = coursePages.map(mapCourse).filter((course) => course.name);
+  const courseMap = new Map(courses.map((course) => [normalizeNotionId(course.id), course]));
+  const records = recordPages.map((page) => mapClassRecord(page, courseMap));
+  return Response.json({
+    profile: mapChildProfile(profilePage),
+    courses,
+    records,
+    summary: summarizeClasses(records, courses, year),
+    year,
+  }, { headers: NO_STORE_HEADERS });
+}
+
+async function createClassRecord(request, env) {
+  requireClassesConfig(env);
+  const body = await readClassRecordRequest(request);
+  const pinError = await validateActionPin(request, env, body.pin, 'class-record');
+  if (pinError) return pinError;
+  const validation = validateClassRecord(body);
+  if (validation) return validation;
+
+  const coursePage = await notion(`/pages/${body.courseId}`, env);
+  validatePageParent(coursePage, env.NOTION_COURSES_DATABASE_ID, 'Course page');
+  if (coursePage.archived || coursePage.in_trash || !coursePage.properties?.['启用']?.checkbox) {
+    return json({ error: '课程已经停用', code: 'COURSE_DISABLED' }, 400);
+  }
+  const course = mapCourse(coursePage);
+  const properties = {
+    '记录': titleProperty(`${course.name} - ${body.start.slice(0, 10)}`),
+    '课程': { relation: [{ id: coursePage.id }] },
+    '上课时间': { date: { start: body.start, ...(body.end ? { end: body.end } : {}) } },
+    '状态': { status: { name: body.status } },
+    '时长': body.duration ? { number: body.duration } : { number: null },
+    '上课内容': richTextProperty(body.content),
+    '课堂表现': body.performance ? { select: { name: body.performance } } : { select: null },
+    '老师点评': richTextProperty(body.comment),
+    '地点': richTextProperty(body.location),
+  };
+  let page = await notion('/pages', env, {
+    method: 'POST',
+    body: JSON.stringify({ parent: { database_id: env.NOTION_CLASS_RECORDS_DATABASE_ID }, properties }),
+  });
+
+  const uploaded = [];
+  const uploadFailures = [];
+  for (const file of body.files) {
+    try {
+      uploaded.push(await uploadNotionFile(file, env));
+    } catch {
+      uploadFailures.push({ name: file.name || '未命名文件', code: 'UPLOAD_FAILED' });
+    }
+  }
+  if (uploaded.length) {
+    page = await notion(`/pages/${page.id}`, env, {
+      method: 'PATCH',
+      body: JSON.stringify({ properties: { '媒体': { files: uploaded } } }),
+    });
+  }
+  return Response.json({
+    record: mapClassRecord(page, new Map([[normalizeNotionId(course.id), course]])),
+    uploadFailures,
+  }, { status: 201, headers: NO_STORE_HEADERS });
+}
+
+async function proxyProfileAvatar(request, env) {
+  requireClassesConfig(env);
+  const page = await notion(`/pages/${env.NOTION_CHILD_PROFILE_PAGE_ID}`, env);
+  validatePageParent(page, env.NOTION_CHILD_PROFILE_DATABASE_ID, 'Profile page');
+  const file = page.properties?.['头像']?.files?.[0];
+  if (!file) return json({ error: '还没有上传头像', code: 'AVATAR_NOT_FOUND' }, 404);
+  return proxyNotionFile(request, file);
+}
+
+async function proxyCourseIcon(request, env, courseId) {
+  requireClassesConfig(env);
+  const page = await notion(`/pages/${courseId}`, env);
+  validatePageParent(page, env.NOTION_COURSES_DATABASE_ID, 'Course page');
+  if (page.icon?.type !== 'file') return json({ error: '课程图片图标不存在', code: 'ICON_NOT_FOUND' }, 404);
+  return proxyNotionFile(request, { name: 'course-icon', type: 'file', file: page.icon.file });
+}
+
+async function proxyClassMedia(request, env, recordId, index) {
+  requireClassesConfig(env);
+  const page = await notion(`/pages/${recordId}`, env);
+  validatePageParent(page, env.NOTION_CLASS_RECORDS_DATABASE_ID, 'Class record');
+  if (page.archived || page.in_trash) return json({ error: '记录不存在', code: 'NOT_FOUND' }, 404);
+  const file = page.properties?.['媒体']?.files?.[index];
+  if (!file) return json({ error: '媒体不存在', code: 'MEDIA_NOT_FOUND' }, 404);
+  return proxyNotionFile(request, file);
+}
+
+async function proxyNotionFile(request, file) {
+  const sourceUrl = file.type === 'file' ? file.file?.url : '';
+  if (!sourceUrl) return json({ error: '媒体不可用', code: 'MEDIA_UNAVAILABLE' }, 404);
+  const headers = new Headers();
+  const range = request.headers.get('Range');
+  if (range) headers.set('Range', range);
+  const response = await fetch(sourceUrl, { headers });
+  if (!response.ok && response.status !== 206) return json({ error: '媒体读取失败', code: 'MEDIA_FETCH_FAILED' }, 502);
+  const responseHeaders = new Headers({
+    'Cache-Control': 'private, no-store',
+    'Content-Type': response.headers.get('Content-Type') || mediaContentType(file.name),
+    'Accept-Ranges': response.headers.get('Accept-Ranges') || 'bytes',
+  });
+  for (const name of ['Content-Length', 'Content-Range']) {
+    const value = response.headers.get(name);
+    if (value) responseHeaders.set(name, value);
+  }
+  return new Response(response.body, { status: response.status, headers: responseHeaders });
 }
 
 async function earnTask(request, env) {
@@ -307,6 +465,99 @@ function mapGift(page) {
   };
 }
 
+function mapChildProfile(page) {
+  const properties = page.properties || {};
+  return {
+    name: plainText(properties['姓名']?.title) || '多乐',
+    birthday: properties['生日']?.date?.start || '2022-01-29',
+    avatarUrl: properties['头像']?.files?.length ? '/api/class-avatar' : '',
+  };
+}
+
+function mapCourse(page) {
+  const properties = page.properties || {};
+  return {
+    id: page.id,
+    name: plainText(properties['课程']?.title),
+    color: properties['颜色']?.select?.name || '粉色',
+    teacher: plainText(properties['老师']?.rich_text),
+    location: plainText(properties['地点']?.rich_text),
+    defaultDuration: properties['默认时长']?.number || 0,
+    order: properties['排序']?.number || 0,
+    icon: page.icon?.type === 'emoji'
+      ? { type: 'emoji', value: page.icon.emoji }
+      : page.icon?.type === 'file' ? { type: 'image', value: `/api/class-course-icon/${page.id}` } : null,
+  };
+}
+
+function mapClassRecord(page, courseMap) {
+  const properties = page.properties || {};
+  const courseId = properties['课程']?.relation?.[0]?.id || '';
+  const course = courseMap.get(normalizeNotionId(courseId)) || null;
+  const mediaFiles = properties['媒体']?.files || [];
+  return {
+    id: page.id,
+    courseId,
+    course,
+    start: properties['上课时间']?.date?.start || page.created_time,
+    end: properties['上课时间']?.date?.end || '',
+    status: properties['状态']?.status?.name || '计划中',
+    duration: properties['时长']?.number || 0,
+    content: plainText(properties['上课内容']?.rich_text),
+    performance: properties['课堂表现']?.select?.name || '',
+    comment: plainText(properties['老师点评']?.rich_text),
+    location: plainText(properties['地点']?.rich_text) || course?.location || '',
+    media: mediaFiles.map((file, index) => ({
+      name: file.name || `课堂媒体 ${index + 1}`,
+      type: isVideoFile(file.name) ? 'video' : 'image',
+      url: `/api/class-media/${page.id}/${index}`,
+    })),
+  };
+}
+
+function summarizeClasses(records, courses, year) {
+  const validRecords = records.filter((record) => record.status === '已完成' || record.status === '试听');
+  const activeDays = new Set(validRecords.map((record) => shanghaiDateKey(new Date(record.start))));
+  const courseCounts = new Map();
+  const monthCounts = new Map();
+  for (const record of validRecords) {
+    courseCounts.set(record.courseId, (courseCounts.get(record.courseId) || 0) + 1);
+    const month = Number(shanghaiDateKey(new Date(record.start)).slice(5, 7));
+    monthCounts.set(month, (monthCounts.get(month) || 0) + 1);
+  }
+  const favoriteCourse = [...courses].sort((left, right) =>
+    (courseCounts.get(right.id) || 0) - (courseCounts.get(left.id) || 0) || left.order - right.order)[0];
+  const busiestMonth = [...monthCounts].sort((left, right) => right[1] - left[1] || left[0] - right[0])[0]?.[0] || 0;
+  return {
+    completedCount: validRecords.length,
+    activeDays: activeDays.size,
+    favoriteCourseId: validRecords.length ? favoriteCourse?.id || '' : '',
+    currentWeekStreak: currentClassWeekStreak(activeDays, year),
+    busiestMonth,
+  };
+}
+
+function currentClassWeekStreak(activeDays, year) {
+  const nowParts = shanghaiDateParts();
+  if (Number(nowParts.year) !== year) return 0;
+  const today = new Date(`${nowParts.year}-${nowParts.month}-${nowParts.day}T12:00:00+08:00`);
+  const weekday = (today.getUTCDay() + 6) % 7;
+  let weekStart = new Date(today.getTime() - weekday * 86400000);
+  let streak = 0;
+  while (true) {
+    let hasClass = false;
+    for (let offset = 0; offset < 7; offset += 1) {
+      if (activeDays.has(shanghaiDateKey(new Date(weekStart.getTime() + offset * 86400000)))) {
+        hasClass = true;
+        break;
+      }
+    }
+    if (!hasClass) return streak;
+    streak += 1;
+    weekStart = new Date(weekStart.getTime() - 7 * 86400000);
+  }
+}
+
 function mapTask(page) {
   const properties = page.properties || {};
   return {
@@ -385,6 +636,61 @@ async function readSpendRequest(request) {
   return { ...body, files: [] };
 }
 
+async function readClassRecordRequest(request) {
+  if (!request.headers.get('Content-Type')?.includes('multipart/form-data')) return { files: [] };
+  const form = await request.formData();
+  return {
+    pin: form.get('pin'),
+    courseId: String(form.get('courseId') || ''),
+    start: String(form.get('start') || ''),
+    end: String(form.get('end') || ''),
+    status: String(form.get('status') || ''),
+    duration: Number(form.get('duration') || 0),
+    content: String(form.get('content') || '').trim(),
+    performance: String(form.get('performance') || ''),
+    comment: String(form.get('comment') || '').trim(),
+    location: String(form.get('location') || '').trim(),
+    files: form.getAll('media').filter((value) => value instanceof File && value.size > 0),
+  };
+}
+
+function validateClassRecord(body) {
+  const statuses = new Set(['计划中', '已完成', '请假', '取消', '试听']);
+  const performances = new Set(['', '很开心', '认真', '有进步', '需要鼓励']);
+  if (!isNotionId(body.courseId)) return json({ error: '请选择课程', code: 'INVALID_COURSE' }, 400);
+  if (!Number.isFinite(Date.parse(body.start))) return json({ error: '请选择正确的上课时间', code: 'INVALID_DATE' }, 400);
+  if (body.end && (!Number.isFinite(Date.parse(body.end)) || Date.parse(body.end) <= Date.parse(body.start))) {
+    return json({ error: '结束时间必须晚于开始时间', code: 'INVALID_END_DATE' }, 400);
+  }
+  if (!statuses.has(body.status)) return json({ error: '课程状态无效', code: 'INVALID_STATUS' }, 400);
+  if (!performances.has(body.performance)) return json({ error: '课堂表现无效', code: 'INVALID_PERFORMANCE' }, 400);
+  if (!Number.isInteger(body.duration) || body.duration < 0 || body.duration > 480) {
+    return json({ error: '时长需要在 0 到 480 分钟之间', code: 'INVALID_DURATION' }, 400);
+  }
+  if (body.content.length > 2000 || body.comment.length > 2000 || body.location.length > 200) {
+    return json({ error: '填写内容过长', code: 'CONTENT_TOO_LONG' }, 400);
+  }
+  if (body.files.length > 5) return json({ error: '一次最多上传 5 个文件', code: 'TOO_MANY_FILES' }, 400);
+  for (const file of body.files) {
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+      return json({ error: '只支持图片或视频文件', code: 'INVALID_FILE_TYPE' }, 400);
+    }
+    if (file.size > 20 * 1024 * 1024) return json({ error: '单个文件不能超过 20 MB', code: 'FILE_TOO_LARGE' }, 400);
+  }
+  return null;
+}
+
+async function validateActionPin(request, env, pin, namespace) {
+  const key = `${namespace}:${request.headers.get('CF-Connecting-IP') || 'unknown'}`;
+  if (isLoginBlocked(key)) return json({ error: '尝试次数太多，请 15 分钟后再试', code: 'RATE_LIMITED' }, 429);
+  if (!await pinMatches(pin, env)) {
+    recordLoginFailure(key);
+    return json({ error: '家长 PIN 不正确', code: 'PIN_INVALID' }, 401);
+  }
+  failedLogins.delete(key);
+  return null;
+}
+
 function requireConfig(env, databaseId) {
   if (!env.NOTION_TOKEN || !databaseId) throw new Error('Notion is not configured');
 }
@@ -394,6 +700,56 @@ function requireRewardsConfig(env) {
       !env.NOTION_BALANCE_DATABASE_ID || !env.NOTION_BALANCE_PAGE_ID) {
     throw new Error('Rewards databases are not configured');
   }
+}
+
+function requireClassesConfig(env) {
+  if (!env.NOTION_TOKEN || !env.NOTION_CHILD_PROFILE_DATABASE_ID || !env.NOTION_CHILD_PROFILE_PAGE_ID ||
+      !env.NOTION_COURSES_DATABASE_ID || !env.NOTION_CLASS_RECORDS_DATABASE_ID) {
+    throw new Error('Classes databases are not configured');
+  }
+}
+
+function validatePageParent(page, databaseId, label) {
+  if (page.parent?.database_id?.replaceAll('-', '') !== databaseId.replaceAll('-', '')) {
+    throw new Error(`${label} is invalid`);
+  }
+}
+
+function normalizeNotionId(value) {
+  return String(value || '').replaceAll('-', '');
+}
+
+function shanghaiDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date);
+  return Object.fromEntries(parts.map((part) => [part.type, part.value]));
+}
+
+function shanghaiDateKey(date = new Date()) {
+  const values = shanghaiDateParts(date);
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function shanghaiYearRange(year) {
+  return {
+    start: `${year}-01-01T00:00:00+08:00`,
+    end: `${year + 1}-01-01T00:00:00+08:00`,
+  };
+}
+
+function isVideoFile(name = '') {
+  return /\.(mp4|mov|m4v|webm|ogg)(?:$|\?)/i.test(name);
+}
+
+function mediaContentType(name = '') {
+  if (/\.mp4$/i.test(name)) return 'video/mp4';
+  if (/\.mov$/i.test(name)) return 'video/quicktime';
+  if (/\.webm$/i.test(name)) return 'video/webm';
+  if (/\.png$/i.test(name)) return 'image/png';
+  if (/\.gif$/i.test(name)) return 'image/gif';
+  if (/\.webp$/i.test(name)) return 'image/webp';
+  return 'image/jpeg';
 }
 
 function requireAuthConfig(env) {
