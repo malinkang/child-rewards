@@ -162,6 +162,7 @@ When adding an endpoint, update `README.md`, this file, and proportional tests i
 - Locked devices may read data but must show locked task and redemption actions. Never treat frontend state as authorization.
 - Shared navigation is rendered by `public/shared-nav.js`; add future sections to its centralized item list.
 - The classes page must clear private in-memory data after device lock and keep horizontal overflow inside the heatmap scroller.
+- History entries display their `说明` value as a distinct note in the home growth ledger.
 - Fixed voice clips live in `public/audio/`; do not add a runtime TTS dependency without explicit approval.
 - Choose welcome audio only after `/api/rewards` resolves. Use today's positive ledger entries to select not-started or in-progress audio.
 - Play welcome audio at most once per Beijing date. If autoplay is blocked, defer it until the first user gesture.

@@ -244,6 +244,7 @@ form button:not(.subtle-button), .dialog-actions button:last-child { border: 3px
 .shop-content { min-width: 0; }
 .shop-title, .ledger-title { font-weight: 900; }
 .ledger-meta { margin-top: 5px; color: var(--muted); font-size: 13px; font-weight: 700; }
+.ledger-note { display:inline-flex; align-items:flex-start; max-width:100%; margin-top:8px; padding:7px 10px; border-radius:12px; background:var(--yellow-soft); color:var(--ink); font-size:13px; font-weight:900; line-height:1.45; overflow-wrap:anywhere; }
 .shop-progress { margin-top: 9px; }
 .shop-progress-label { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 12px; font-weight: 900; }
 .shop-progress-label span:last-child { color: var(--pink-deep); }

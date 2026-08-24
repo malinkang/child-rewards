@@ -240,7 +240,8 @@ function renderLedger() {
       ${cover ? `<div class="ledger-thumb">${mediaThumbnail(cover)}</div>` : ''}
       <div>
         <div class="ledger-title">${escapeHtml(entry.title)}</div>
-        <div class="ledger-meta">${formatDate(entry.date)}${entry.reason ? ` · ${escapeHtml(entry.reason)}` : ''}</div>
+        <div class="ledger-meta">${formatDate(entry.date)}</div>
+        ${entry.reason ? `<div class="ledger-note">📝 ${escapeHtml(entry.reason)}</div>` : ''}
       </div>
       <div class="ledger-stars ${starClass}">${sign}${entry.stars}</div>
     </div>`;
@@ -598,6 +599,8 @@ function weekStart(date = new Date()) {
 }
 
 function formatDate(value) {
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+  if (dateOnly) return `${dateOnly[2]}/${dateOnly[3]}`;
   return new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
