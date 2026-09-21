@@ -6,7 +6,7 @@
   <title>多乐的星星屋</title>
   <link rel="preload" href="./fonts/ZCOOLKuaiLe-Regular.ttf" as="font" type="font/ttf" crossorigin />
   <link rel="stylesheet" href="./shared-nav.css?v=20260717-classes" />
-  <link rel="stylesheet" href="./styles.css?v=20260824-ledger-note" />
+  <link rel="stylesheet" href="./styles.css?v=20260921-rewards-heatmap" />
 </head>
 <body>
   <nav id="siteNav" class="site-nav" aria-label="主导航"></nav>
@@ -72,6 +72,19 @@
 
       <div id="taskGrid" class="task-grid">
         <div class="empty task-loading">正在从 Notion 取回任务...</div>
+      </div>
+    </section>
+
+    <section class="panel rewards-heatmap-panel" aria-labelledby="rewardsHeatmapTitle">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Stars In Color</p>
+          <h2 id="rewardsHeatmapTitle">星星足迹</h2>
+        </div>
+        <label class="rewards-year-control">年份 <select id="rewardsHeatmapYear" disabled></select></label>
+      </div>
+      <div id="rewardsHeatmapContent" aria-busy="true">
+        <div class="empty">正在读取星星足迹...</div>
       </div>
     </section>
 
@@ -143,7 +156,8 @@
     </form>
   </dialog>
 
+  <div id="rewardsHeatmapTooltip" class="rewards-heatmap-tooltip" role="tooltip" hidden></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="./app.js?v=20260824-ledger-note" type="module"></script>
+  <script src="./app.js?v=20260921-rewards-heatmap" type="module"></script>
 </body>
 </html>

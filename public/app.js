@@ -1,4 +1,5 @@
 import { mountSharedNav } from './shared-nav.js';
+import { beijingDateKey, buildRewardsHeatmap } from './rewards-heatmap.js';
 
 let tasks = [];
 let ledger = [];
@@ -26,6 +27,10 @@ let activeAudio = null;
 let pendingWelcome = '';
 let welcomeEvaluated = false;
 let pinRequest = null;
+let rewardsHeatmapYear = Number(beijingDateKey().slice(0, 4));
+let rewardsTooltipCell = null;
+let rewardsTooltipPinned = false;
+let rewardsTooltipHideTimer = null;
 
 function getBalance() {
   return balance;
@@ -114,6 +119,7 @@ function render() {
 
   renderJar(balance);
   renderTasks();
+  renderRewardsHeatmap();
   renderShop(balance);
   renderLedger();
 }
@@ -153,6 +159,118 @@ function renderTaskIcon(icon) {
   if (!icon) return '⭐';
   if (icon.type === 'image') return `<img src="${escapeHtml(icon.value)}" alt="" />`;
   return escapeHtml(icon.value);
+}
+
+function renderRewardsHeatmap() {
+  hideRewardsTooltip();
+  const content = document.getElementById('rewardsHeatmapContent');
+  const yearSelect = document.getElementById('rewardsHeatmapYear');
+  const data = buildRewardsHeatmap(ledger, rewardsHeatmapYear);
+  const currentYear = Number(beijingDateKey().slice(0, 4));
+  const years = [...new Set([currentYear, rewardsHeatmapYear, ...data.years])].sort((a, b) => b - a);
+  const options = years.map((year) => `<option value="${year}">${year} 年</option>`).join('');
+  if (yearSelect.innerHTML !== options) yearSelect.innerHTML = options;
+  yearSelect.value = String(rewardsHeatmapYear);
+  yearSelect.disabled = rewardsStatus !== 'ready';
+  content.setAttribute('aria-busy', String(rewardsStatus === 'loading'));
+  if (rewardsStatus !== 'ready') {
+    content.innerHTML = `<div class="empty">${rewardsStatus === 'loading' ? '正在读取星星足迹...' : '星星足迹暂时没有取回来，请点击上方“刷新”。'}</div>`;
+    return;
+  }
+
+  const scrollLeft = content.querySelector('.rewards-heatmap-scroll')?.scrollLeft || 0;
+  const months = data.months.map(({ month, column }) => `<span class="rewards-heat-label" style="grid-column:${column};grid-row:1">${month}月</span>`).join('');
+  const weekdays = ['一', '二', '三', '四', '五', '六', '日'].map((day, index) => `<span class="rewards-heat-label rewards-heat-weekday" style="grid-column:1;grid-row:${index + 2}">${day}</span>`).join('');
+  const cells = data.days.map((day) => {
+    const attributes = `class="rewards-heat-cell" data-date="${day.date}" data-level="${Math.min(day.stars, 4)}" style="grid-column:${day.column};grid-row:${day.row}" aria-label="${day.date}，获得 ${day.stars} 颗星"`;
+    return day.reasons.length
+      ? `<button type="button" ${attributes} data-reasons="${escapeHtml(day.reasons.join('\n'))}"></button>`
+      : `<span ${attributes} role="img"></span>`;
+  }).join('');
+  content.innerHTML = `<div class="rewards-heatmap-scroll" tabindex="0" role="region" aria-label="${rewardsHeatmapYear} 年获得星星热力图，可横向滚动">
+      <div class="rewards-heatmap" style="--heatmap-weeks:${data.weekCount}">${months}${weekdays}${cells}</div>
+    </div>
+    <div class="rewards-heatmap-footer">
+      <p class="rewards-heatmap-summary">${data.activeDays ? `已收集 <strong>${data.totalStars}</strong> 颗星 · <strong>${data.activeDays}</strong> 天有收获` : '这一年还没有星星足迹，完成任务后就会点亮。'}</p>
+      <div class="rewards-heatmap-legend" aria-label="每日获得星星数：颜色从浅到深表示 0、1、2、3、4 颗及以上">
+        <span>少</span>${[0, 1, 2, 3, 4].map((level) => `<i class="rewards-heat-cell" data-level="${level}" aria-hidden="true"></i>`).join('')}<span>多</span>
+      </div>
+    </div>`;
+  content.querySelector('.rewards-heatmap-scroll').scrollLeft = scrollLeft;
+}
+
+function showRewardsTooltip(cell) {
+  if (!cell?.dataset.reasons) return;
+  window.clearTimeout(rewardsTooltipHideTimer);
+  if (rewardsTooltipCell !== cell) hideRewardsTooltip();
+  const tooltip = document.getElementById('rewardsHeatmapTooltip');
+  rewardsTooltipCell = cell;
+  tooltip.textContent = cell.dataset.reasons;
+  tooltip.hidden = false;
+  cell.setAttribute('aria-describedby', tooltip.id);
+  const rect = cell.getBoundingClientRect();
+  const left = Math.max(12, Math.min(rect.left + rect.width / 2 - tooltip.offsetWidth / 2, window.innerWidth - tooltip.offsetWidth - 12));
+  const below = rect.bottom + 8;
+  const top = below + tooltip.offsetHeight <= window.innerHeight - 12 ? below : Math.max(12, rect.top - tooltip.offsetHeight - 8);
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+}
+
+function hideRewardsTooltip() {
+  window.clearTimeout(rewardsTooltipHideTimer);
+  rewardsTooltipCell?.removeAttribute('aria-describedby');
+  rewardsTooltipCell = null;
+  rewardsTooltipPinned = false;
+  document.getElementById('rewardsHeatmapTooltip').hidden = true;
+}
+
+function scheduleRewardsTooltipHide() {
+  window.clearTimeout(rewardsTooltipHideTimer);
+  rewardsTooltipHideTimer = window.setTimeout(() => {
+    const tooltip = document.getElementById('rewardsHeatmapTooltip');
+    if (!rewardsTooltipPinned && !rewardsTooltipCell?.matches(':hover, :focus-visible') && !tooltip.matches(':hover')) hideRewardsTooltip();
+  }, 120);
+}
+
+function setupRewardsHeatmap() {
+  const content = document.getElementById('rewardsHeatmapContent');
+  const tooltip = document.getElementById('rewardsHeatmapTooltip');
+  const findCell = (event) => event.target.closest('[data-reasons]');
+  document.getElementById('rewardsHeatmapYear').addEventListener('change', (event) => {
+    rewardsHeatmapYear = Number(event.target.value);
+    renderRewardsHeatmap();
+  });
+  content.addEventListener('pointerover', (event) => {
+    if (event.pointerType !== 'touch') showRewardsTooltip(findCell(event));
+  });
+  content.addEventListener('focusin', (event) => showRewardsTooltip(findCell(event)));
+  content.addEventListener('click', (event) => {
+    const cell = findCell(event);
+    if (!cell) return;
+    showRewardsTooltip(cell);
+    rewardsTooltipPinned = true;
+  });
+  content.addEventListener('pointerout', (event) => {
+    const cell = findCell(event);
+    if (cell && !tooltip.contains(event.relatedTarget)) scheduleRewardsTooltipHide();
+  });
+  content.addEventListener('focusout', (event) => {
+    if (!tooltip.contains(event.relatedTarget)) hideRewardsTooltip();
+  });
+  tooltip.addEventListener('pointerenter', () => window.clearTimeout(rewardsTooltipHideTimer));
+  tooltip.addEventListener('pointerleave', scheduleRewardsTooltipHide);
+  document.addEventListener('pointerdown', (event) => {
+    if (!tooltip.contains(event.target) && !rewardsTooltipCell?.contains(event.target)) hideRewardsTooltip();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') hideRewardsTooltip();
+  });
+  document.addEventListener('scroll', (event) => {
+    if (event.target === tooltip) return;
+    if (rewardsTooltipCell?.matches(':focus-visible')) showRewardsTooltip(rewardsTooltipCell);
+    else hideRewardsTooltip();
+  }, true);
+  window.addEventListener('resize', hideRewardsTooltip);
 }
 
 function renderShop(balance) {
@@ -622,6 +740,7 @@ function showToast(message) {
 }
 
 function setupEvents() {
+  setupRewardsHeatmap();
   renderNavigation();
   updateSoundButton();
   document.addEventListener('pointerdown', (event) => {
