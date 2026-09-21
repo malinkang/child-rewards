@@ -16,8 +16,17 @@ NOTION_CHILD_PROFILE_DATABASE_ID = "3a086019-c92c-819d-855b-f36580c0203f"
 NOTION_CHILD_PROFILE_PAGE_ID = "3a086019-c92c-81ad-be95-c0829a5a260b"
 NOTION_COURSES_DATABASE_ID = "3a086019-c92c-81d4-adc6-caab4eeecedb"
 NOTION_CLASS_RECORDS_DATABASE_ID = "3a086019-c92c-817d-ab38-ed41a0417036"
+NOTION_QIQIXUE_TASK_ID = "39c86019-c92c-813a-8969-f67603fe6fb1"
 NOTION_VERSION = "2022-06-28"
 
 [[routes]]
 pattern = "child.malinkang.com"
 custom_domain = true
+
+[[durable_objects.bindings]]
+name = "QIQIXUE_IMPORTS"
+class_name = "QiqixueImport"
+
+[[migrations]]
+tag = "v1-qiqixue-imports"
+new_sqlite_classes = ["QiqixueImport"]

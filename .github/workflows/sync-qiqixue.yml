@@ -1,0 +1,39 @@
+name: Sync Qiqixue learning records
+
+on:
+  schedule:
+    - cron: '17 22 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Compare records without creating Notion pages
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qiqixue-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Validate source sync
+        run: node --test tests/qiqixue-source.test.js
+      - name: Sync learning records
+        env:
+          QIQIXUE_COOKIE: ${{ secrets.QIQIXUE_COOKIE }}
+          QIQIXUE_SYNC_TOKEN: ${{ secrets.QIQIXUE_SYNC_TOKEN }}
+          QIQIXUE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+        run: node scripts/sync-qiqixue.mjs --dry-run="$QIQIXUE_DRY_RUN"

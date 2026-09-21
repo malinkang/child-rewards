@@ -16,6 +16,8 @@ This repository is a personal child-rewards application deployed at `https://chi
 - `public/app.js`: browser state, rendering, interactions, and calls to `/api/*`.
 - `public/rewards-heatmap.js`: Beijing-date grouping and annual calendar layout for earned-star history.
 - `src/index.js`: Cloudflare Worker router, validation, Notion reads/writes, media uploads, and static asset fallback.
+- `src/qiqixue-sync.js`: machine-only learning import and per-source Durable Object deduplication.
+- `scripts/sync-qiqixue.mjs`, `scripts/qiqixue.mjs`: GitHub Actions source fetch, validation, and sequential import.
 - `wrangler.toml`: Worker deployment, custom domain, and non-secret Notion identifiers.
 - `NOTION_TOKEN`, `AUTH_PIN`, and `AUTH_SECRET`: Cloudflare Secrets only. Never write them to files, output, frontend code, commits, or logs.
 
@@ -49,6 +51,8 @@ Property names are exact API contracts. If a property is renamed in Notion, upda
 - `时间`: date
 - `媒体`: files
 - `余额统计`: relation to the singleton 余额统计 row
+- `来源 ID`: rich_text, optional permanent Qiqixue deduplication key `qiqixue:<accountId>:<recordId>`
+- `备注`: rich_text, Qiqixue source start/end timestamps and session duration; keep `说明` concise (`阅读牛津树：书名`)
 
 ### 余额统计
 
@@ -111,7 +115,11 @@ Database and singleton balance-page IDs are configured through `wrangler.toml`. 
 - Spending must validate the latest Rollup balance before uploading files or creating a negative record.
 - Spending media is optional, limited to 5 files, 20 MB per file, and image/video MIME types.
 - Media belongs in Notion file properties. Do not add browser `localStorage`, IndexedDB, R2, or repository assets for user uploads without explicit approval.
-- Keep all write endpoints same-origin protected and require a valid signed device cookie.
+- Keep all browser write endpoints same-origin protected and require a valid signed device cookie.
+- The sole machine exception is `POST /api/sync/qiqixue`, authenticated by a dedicated `QIQIXUE_SYNC_TOKEN`. Reject requests with Origin headers. This token cannot authorize browser routes.
+- Qiqixue imports add positive records to the existing ledger, using the current active task configured by `NOTION_QIQIXUE_TASK_ID` and its current star value. Always validate task ownership and relate the balance singleton. Same-day source sessions stay separate; do not infer mastery. If an unlinked manual reward for this task exists on that Beijing day, stop for reconciliation instead of double-awarding.
+- Keep source Cookie in GitHub Secrets and Notion credentials in Cloudflare Secrets. Never log source records, IDs, book names, Cookie values, or upstream error bodies in Actions.
+- Each source ID uses a Durable Object for serialization and durable create-intent/page-ID metadata only. Notion remains the source of truth. Uncertain creates must be reconciled by source ID, never blindly retried. Preserve known archived imported pages and user edits.
 - Device authorization lasts 30 days. Gift redemption additionally requires the current parent PIN on every attempt.
 - Keep PIN comparison timing-safe, throttle failed PIN attempts, and enforce a short server-side write cooldown.
 - Class profile, records, avatar, and media are private and require a valid device cookie for every read.
@@ -136,6 +144,7 @@ Database and singleton balance-page IDs are configured through `wrangler.toml`. 
 - `GET /api/class-media/:recordId/:index`: proxies validated record media without exposing its source URL.
 - `POST /api/earn`: body `{ taskId }`; validates the task and creates one earning record.
 - `POST /api/spend`: JSON without media or multipart form data with `item`, `stars`, `pin`, and repeated `media` files.
+- `POST /api/sync/qiqixue`: machine Bearer token only; `{ record: { sourceId, book, start, end, seconds, wifiPen }, dryRun: boolean }`; returns `created`, `exists`, or `would_create`. No private record data in responses; dry-run does not modify Notion or Durable Object storage.
 - Other `/api/*` routes return 404. Static requests fall through to `env.ASSETS`.
 
 When adding an endpoint, update `README.md`, this file, and proportional tests in the same change.

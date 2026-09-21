@@ -1,3 +1,6 @@
+import { handleQiqixueSync } from './qiqixue-sync.js';
+export { QiqixueImport } from './qiqixue-sync.js';
+
 const NOTION_API = 'https://api.notion.com/v1';
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 const NO_STORE_HEADERS = { ...JSON_HEADERS, 'Cache-Control': 'no-store' };
@@ -12,6 +15,9 @@ export default {
     const url = new URL(request.url);
 
     try {
+      if (url.pathname === '/api/sync/qiqixue' && request.method === 'POST') {
+        return handleQiqixueSync(request, env);
+      }
       if (url.pathname === '/api/gifts' && request.method === 'GET') {
         return getGifts(env);
       }

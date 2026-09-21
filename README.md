@@ -54,6 +54,12 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 
 记录表不保存余额快照。
 
+### 奇奇学阅读补录
+
+奇奇学每次阅读保存到现有「星星记录」，关联「读 1本牛津树」任务及余额统计。`来源 ID`（Rich text）用 `qiqixue:<accountId>:<recordId>` 去重，`备注`（Rich text）保留源起止时间和会话秒数，`说明` 只显示「阅读牛津树：书名」。
+
+同日多次阅读分别保留，每条新增按任务当前星星值发放（目前 1 星星），并进入已有首页和热力图。历史同日人工记录先核对、补充来源 ID，避免重复发放。没有设置时长门槛，短会话也补录；秒数只表示源起止时间差，不代表掌握程度。
+
 ### 余额统计
 
 | 属性 | 类型 | 用途 |
@@ -128,8 +134,9 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 | `GET` | `/api/class-media/:recordId/:index` | 授权代理课堂图片或视频 |
 | `POST` | `/api/earn` | 完成一次任务并写入一条星星记录 |
 | `POST` | `/api/spend` | 使用家长 PIN 兑换礼品，可同时上传照片或视频 |
+| `POST` | `/api/sync/qiqixue` | 独立机器凭证导入单条学习明细，支持 dry-run 和持久去重 |
 
-写接口要求请求来源与 Worker 同源，并且必须携带 Worker 签发的设备授权 Cookie。兑换还会再次校验当次提交的家长 PIN。
+浏览器写接口要求请求来源与 Worker 同源，并且必须携带 Worker 签发的设备授权 Cookie。兑换还会再次校验当次提交的家长 PIN。奇奇学同步入口是独立机器接口，拒绝带 Origin 的请求，仅接受专用 Bearer token，详见 [同步说明](docs/qiqixue-sync.md)。
 
 ## Environment
 
@@ -144,6 +151,7 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 - `NOTION_CHILD_PROFILE_PAGE_ID`
 - `NOTION_COURSES_DATABASE_ID`
 - `NOTION_CLASS_RECORDS_DATABASE_ID`
+- `NOTION_QIQIXUE_TASK_ID`
 - `NOTION_VERSION`
 
 Secret：
@@ -151,6 +159,9 @@ Secret：
 - `NOTION_TOKEN`
 - `AUTH_PIN`
 - `AUTH_SECRET`
+- `QIQIXUE_SYNC_TOKEN`（仅授权学习导入，另存于 GitHub Actions Secrets）
+
+奇奇学每日同步由 `.github/workflows/sync-qiqixue.yml` 在北京时间 06:17 触发，使用 GitHub Secrets 中的 `QIQIXUE_COOKIE`。GitHub 不保存 `NOTION_TOKEN`。部署包含 `QIQIXUE_IMPORTS` SQLite Durable Object 迁移，用于并发去重和不确定写入的恢复。配置与运行方式见 [同步说明](docs/qiqixue-sync.md)。
 
 ## Development
 
