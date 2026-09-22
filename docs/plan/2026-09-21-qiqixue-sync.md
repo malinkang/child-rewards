@@ -1,7 +1,7 @@
 # 奇奇学学习记录补录与每日同步
 
 - 日期：2026-09-21
-- 状态：in_progress
+- 状态：completed
 
 ## 目标与范围
 
@@ -38,4 +38,10 @@
 - 已实现来源分页、校验、机器鉴权、Durable Object 去重、手工奖励冲突检查及每日工作流；Cloudflare 与 GitHub Secrets 已配置，Notion Token 仍仅保留在 Cloudflare。
 - 35 项测试、语法、diff 和 Wrangler 构建检查通过；本地 Wrangler 运行时联调发现并修复 `redirect: error` 不受支持的问题，Worker 改为不跟随重定向的 `manual`。
 - 已部署 Worker。真实数据 dry-run 与正式运行均返回 34 天、41 条、已存在 41 条、新增 0 条。网页显示余额 58，桌面 1280px 与手机 390px 均无横向溢出，浏览器无错误，rewards/gifts 正常。
-- GitHub 验证运行：https://github.com/malinkang/child-rewards/actions/runs/35590705331 。运行器未启动，GitHub 报告账户付款失败或支出限额需提高；没有执行任何脚本步骤。计划保持 in_progress，待用户处理 GitHub Billing & plans 后完成 GitHub 端运行验证，再创建完成提交。
+- 2026-09-21 的 GitHub 验证运行因账户计费限制未启动。2026-09-22 用户将仓库设为 public 后，已重新触发正式同步并成功：https://github.com/malinkang/child-rewards/actions/runs/35678807693 。读取 35 天、42 条记录，新增 1 条、已存在 41 条；Notion Rollup 余额为 59，账本共 96 条。
+
+## 完成记录
+
+- 2026-09-22 再次运行 GitHub Actions 成功：https://github.com/malinkang/child-rewards/actions/runs/35679142912 。读取 35 天、42 条记录，新增 0 条、已存在 42 条；线上账本仍为 96 条，Rollup 余额保持 59，确认新补录记录也不会重复发放星星。
+- GitHub 两次真实运行均通过来源测试和正式同步步骤；本地 35 项测试、语法检查、`git diff --check` 和 Wrangler 构建检查再次通过。
+- 每日北京时间 06:17 的工作流已可正常执行，原有账户计费阻塞已解除。实现提交为 `7218a45`，本次提交记录完整验收结果并关闭计划。
