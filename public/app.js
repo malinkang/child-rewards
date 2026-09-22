@@ -205,7 +205,9 @@ function showRewardsTooltip(cell) {
   if (rewardsTooltipCell !== cell) hideRewardsTooltip();
   const tooltip = document.getElementById('rewardsHeatmapTooltip');
   rewardsTooltipCell = cell;
-  tooltip.textContent = cell.dataset.reasons;
+  const date = new Date(`${cell.dataset.date}T00:00:00Z`);
+  const dateLabel = `${date.getUTCMonth() + 1}月${date.getUTCDate()}日 星期${'日一二三四五六'[date.getUTCDay()]}`;
+  tooltip.textContent = `${dateLabel}\n${cell.dataset.reasons}`;
   tooltip.hidden = false;
   cell.setAttribute('aria-describedby', tooltip.id);
   const rect = cell.getBoundingClientRect();

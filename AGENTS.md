@@ -168,7 +168,7 @@ When adding an endpoint, update `README.md`, this file, and proportional tests i
 - Task cards show today's completion count derived from ledger entries and always retain an enabled “完成一次” action.
 - Preserve the two overview cards: 今日获得 and 本周获得.
 - Keep the annual rewards heatmap directly below the tasks panel. Group only positive `earn` ledger records by Beijing date, with color based on daily earned stars; include every same-day record and exclude spending.
-- Heatmap tooltips show only nonempty record `说明` values, one per line, without title/date/star-count fallbacks. Support hover, keyboard focus, and touch, and contain horizontal scrolling inside the heatmap.
+- Heatmap tooltips start with the cell's Beijing month, day, and weekday (for example, `9月21日 星期一`), followed by nonempty record `说明` values, one per line, without title/star-count fallbacks. Support hover, keyboard focus, and touch, and contain horizontal scrolling inside the heatmap.
 - History entries with media show a thumbnail and open the shared media viewer.
 - Gift media and reward-history media use the same viewer behavior.
 - Locked devices may read data but must show locked task and redemption actions. Never treat frontend state as authorization.
