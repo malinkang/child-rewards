@@ -142,11 +142,15 @@ function renderTasks() {
   grid.innerHTML = tasks.map((task) => {
     const completions = getTaskCompletionsToday(task.id);
     return `<article class="task-card">
-      <span class="task-count">今日 ${completions} 次</span>
-      <span class="task-icon">${renderTaskIcon(task.icon)}</span>
-      <strong>${escapeHtml(task.name)}</strong>
-      <small>每次 +${task.stars} 星</small>
-      <button class="task-complete-button" type="button" data-task-id="${task.id}">${authorized ? '完成一次' : '🔒 完成一次'}</button>
+      <span class="task-icon" aria-hidden="true">${renderTaskIcon(task.icon)}</span>
+      <div class="task-info">
+        <strong>${escapeHtml(task.name)}</strong>
+        <div class="task-meta">
+          <small>每次 +${task.stars} 星</small>
+          <span class="task-count">今日 ${completions} 次</span>
+        </div>
+      </div>
+      <button class="task-complete-button" type="button" data-task-id="${task.id}" aria-label="${authorized ? '完成一次' : '解锁后完成一次'}：${escapeHtml(task.name)}">${authorized ? '完成一次' : '🔒 完成一次'}</button>
     </article>`;
   }).join('');
 

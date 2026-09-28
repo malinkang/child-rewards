@@ -1,7 +1,7 @@
 # 紧凑任务卡片
 
 - 日期：2026-09-28
-- 状态：planned
+- 状态：in_progress
 
 ## 目标与范围
 
@@ -25,3 +25,10 @@
 - 使用本地模拟数据检查长标题、图片图标、锁定/解锁、重复完成及加载/错误/空状态，避免真实 Notion 测试写入。
 - 运行 `node --check src/index.js`、`node --check public/app.js`、`git diff --check`、`npm test`、`npm run check`。
 - 部署后检查静态资源与 `/api/rewards`、`/api/gifts`；记录浏览器验证如有工具限制。
+
+## 实施与验证记录
+
+- 已完成紧凑横向卡片、自适应列数、长标题换行、图片/emoji 图标、44px 按钮、键盘聚焦和减少动态效果适配。
+- 已更新 README 和静态资源版本；任务数据及完成逻辑保持原有行为。
+- JavaScript 语法检查、`git diff --check`、35 项现有测试及 Wrangler 构建检查通过。
+- 浏览器工具无法验证已保存的访问权限，线上页面和本地纯模拟预览均被工具阻止。未绕过权限检查；尺寸、截图和浏览器交互验收尚未完成，因此计划保持 `in_progress`。
