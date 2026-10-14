@@ -197,6 +197,10 @@ async function getRewards(env) {
   return Response.json({ tasks, ledger, balance }, { headers: NO_STORE_HEADERS });
 }
 
+function poetryNotionToken(env) {
+  return env.NOTION_POETRY_TOKEN || env.NOTION_TOKEN;
+}
+
 function poetryCacheKey(env) {
   return `${normalizeNotionId(env.NOTION_POETRY_DATABASE_ID)}:${env.NOTION_VERSION || '2022-06-28'}`;
 }
@@ -231,9 +235,10 @@ function trimPoetryCache() {
 }
 
 async function loadPoetry(env) {
+  const token = poetryNotionToken(env);
   const pages = await queryAll(env.NOTION_POETRY_DATABASE_ID, env, {
     sorts: [{ property: '序号', direction: 'ascending' }],
-  });
+  }, { token });
   const activePages = pages.filter((page) => !page.archived && !page.in_trash);
   const authorNames = await resolvePoemAuthors(activePages, env);
   const poems = activePages.map((page) => mapPoem(page, authorNames)).sort(comparePoems);
@@ -276,13 +281,14 @@ async function resolvePoemAuthors(pages, env) {
 // Author lookups are rate limited: space request starts and retry 429/5xx
 // responses so ~100 unique authors resolve instead of silently disappearing.
 async function fetchAuthorTitle(pageId, env, pace) {
+  const token = poetryNotionToken(env);
   for (let attempt = 1; attempt <= POETRY_AUTHOR_MAX_ATTEMPTS; attempt += 1) {
     await pace();
     let response;
     try {
       response = await fetch(`${NOTION_API}/pages/${pageId}`, {
         headers: {
-          Authorization: `Bearer ${env.NOTION_TOKEN}`,
+          Authorization: `Bearer ${token}`,
           'Notion-Version': env.NOTION_VERSION || '2022-06-28',
         },
       });
@@ -780,7 +786,7 @@ async function waitForBalance(env, expected) {
   return balance;
 }
 
-async function queryAll(databaseId, env, query) {
+async function queryAll(databaseId, env, query, init = {}) {
   const results = [];
   let cursor;
   do {
@@ -789,6 +795,7 @@ async function queryAll(databaseId, env, query) {
     const data = await notion(`/databases/${databaseId}/query`, env, {
       method: 'POST',
       body: JSON.stringify(body),
+      ...init,
     });
     results.push(...data.results);
     cursor = data.has_more ? data.next_cursor : null;
@@ -798,10 +805,11 @@ async function queryAll(databaseId, env, query) {
 
 async function notion(path, env, init = {}) {
   const isFormData = init.body instanceof FormData;
+  const token = init.token || env.NOTION_TOKEN;
   const response = await fetch(`${NOTION_API}${path}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${env.NOTION_TOKEN}`,
+      Authorization: `Bearer ${token}`,
       'Notion-Version': env.NOTION_VERSION || '2022-06-28',
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...init.headers,
@@ -1092,7 +1100,7 @@ function requireClassesConfig(env) {
 }
 
 function requirePoetryConfig(env) {
-  if (!env.NOTION_TOKEN || !env.NOTION_POETRY_DATABASE_ID) {
+  if (!poetryNotionToken(env) || !env.NOTION_POETRY_DATABASE_ID) {
     throw new Error('Poetry database is not configured');
   }
 }

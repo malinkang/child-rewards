@@ -315,6 +315,33 @@ test('returns a generic error when unconfigured and 404s other methods', async (
   assert.equal(posted.status, 404);
 });
 
+test('prefers NOTION_POETRY_TOKEN when provided and works without NOTION_TOKEN', async (t) => {
+  const SEPARATE_DB = 'poetry-db-separate-token';
+  const usedTokens = [];
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    if (url.includes('/databases/')) {
+      const auth = init?.headers?.Authorization || (init?.headers?.get && init.headers.get('Authorization'));
+      usedTokens.push(auth);
+      return queryResponse([poemPage('独坐敬亭山', 1)]);
+    }
+    throw new Error('unexpected fetch ' + url);
+  });
+  const response = await worker.fetch(request(), {
+    NOTION_POETRY_TOKEN: 'dedicated-poetry-token',
+    NOTION_TOKEN: 'fallback-token',
+    NOTION_POETRY_DATABASE_ID: SEPARATE_DB,
+  });
+  assert.equal(response.status, 200);
+  assert.equal(usedTokens[0], 'Bearer dedicated-poetry-token');
+
+  const NO_FALLBACK_DB = 'poetry-db-no-fallback';
+  const response2 = await worker.fetch(request(), {
+    NOTION_POETRY_TOKEN: 'dedicated-poetry-token',
+    NOTION_POETRY_DATABASE_ID: NO_FALLBACK_DB,
+  });
+  assert.equal(response2.status, 200);
+});
+
 test('serves the poetry page asset for /poetry and /poetry/', async () => {
   const requested = [];
   const assets = { fetch: async (assetRequest) => { requested.push(new URL(assetRequest.url).pathname); return new Response('<html></html>', { status: 200 }); } };
