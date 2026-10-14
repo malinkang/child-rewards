@@ -69,19 +69,13 @@ function renderWall() {
 }
 
 function wallItem(artwork, index) {
-  // The wall shows the artwork only: name + date. The description waits for
-  // the enlarged viewer.
+  // The wall is the artwork alone; the name stays in the alt text, and the
+  // description, date and audio wait for the enlarged viewer.
   const label = artworkTitleLabel(artwork);
-  const date = formatArtworkDate(artwork.date);
   return `<figure class="wall-item" style="--i:${index}">
       <button class="wall-frame" type="button" data-index="${index}" aria-label="放大查看《${escapeHtml(label)}》">
         <img class="wall-image" src="${escapeHtml(artwork.image)}" alt="${escapeHtml(label)}" loading="lazy" decoding="async" />
       </button>
-      <figcaption class="wall-label">
-        <span class="wall-label-text">${escapeHtml(label)}</span>
-        ${date ? `<span class="wall-label-meta">${escapeHtml(date)}</span>` : ''}
-        ${artwork.audio ? '<span class="wall-label-audio" aria-hidden="true">🔊</span>' : ''}
-      </figcaption>
     </figure>`;
 }
 

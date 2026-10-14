@@ -187,22 +187,22 @@ async function inspectPage(browser, port, pathname) {
   const summary = await page.evaluate(() => ({
     items: document.querySelectorAll('.wall-item').length,
     frames: document.querySelectorAll('.wall-frame').length,
-    labels: Array.from(document.querySelectorAll('.wall-label-text')).map((node) => node.textContent),
-    metas: Array.from(document.querySelectorAll('.wall-label-meta')).map((node) => node.textContent),
+    captionCards: document.querySelectorAll('.wall-item figcaption').length,
+    imageAlts: Array.from(document.querySelectorAll('.wall-image')).map((node) => node.alt),
+    frameAria: Array.from(document.querySelectorAll('.wall-frame')).map((node) => node.getAttribute('aria-label')),
     frameHeights: Array.from(document.querySelectorAll('.wall-frame')).map((node) => Math.round(node.getBoundingClientRect().height)),
-    audioBadges: document.querySelectorAll('.wall-label-audio').length,
     navLinks: document.querySelectorAll('.nav-link').length,
     current: document.querySelector('.nav-link.is-current')?.textContent?.trim() || '',
     stats: document.getElementById('wallStats')?.textContent || '',
     overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
   }));
   assert(summary.items === 3 && summary.frames === 3, `${pathname}: expected 3 framed artworks, saw ${summary.items}/${summary.frames}`);
-  assert(summary.labels[0] === '多乐作品 01', `${pathname}: expected the artwork name as the first label, saw ${summary.labels[0]}`);
-  assert(summary.labels[1] === '多乐作品 02', `${pathname}: expected the title as the second label, saw ${summary.labels[1]}`);
-  assert(summary.labels[2] === '未命名作品', `${pathname}: expected the unknown-artwork fallback, saw ${summary.labels[2]}`);
-  assert(!summary.labels.some((label) => label.includes('海草')), `${pathname}: the wall leaked the narration description into its labels (${summary.labels.join(' | ')})`);
-  assert(summary.metas[0] === '2026年10月13日', `${pathname}: expected the Beijing date on the wall label, saw ${summary.metas[0]}`);
-  assert(summary.audioBadges === 1, `${pathname}: expected one 🔊 badge, saw ${summary.audioBadges}`);
+  assert(summary.captionCards === 0, `${pathname}: the wall must show the framed artwork only, saw ${summary.captionCards} caption cards`);
+  assert(summary.imageAlts[0] === '多乐作品 01', `${pathname}: expected the artwork name as the first alt text, saw ${summary.imageAlts[0]}`);
+  assert(summary.imageAlts[1] === '多乐作品 02', `${pathname}: expected the title as the second alt text, saw ${summary.imageAlts[1]}`);
+  assert(summary.imageAlts[2] === '未命名作品', `${pathname}: expected the unknown-artwork alt fallback, saw ${summary.imageAlts[2]}`);
+  assert(!summary.imageAlts.some((alt) => alt.includes('海草')), `${pathname}: the wall leaked the narration description into its alt text (${summary.imageAlts.join(' | ')})`);
+  assert(summary.frameAria[0] === '放大查看《多乐作品 01》', `${pathname}: unexpected frame aria-label ${summary.frameAria[0]}`);
   assert(summary.frameHeights[0] > summary.frameHeights[1], `${pathname}: expected the portrait artwork to hang taller than the landscape one (${summary.frameHeights.join(',')})`);
   assert(summary.navLinks === 4, `${pathname}: expected 4 nav links, saw ${summary.navLinks}`);
   assert(summary.current.includes('作品墙'), `${pathname}: expected current nav item 作品墙, saw ${summary.current}`);
