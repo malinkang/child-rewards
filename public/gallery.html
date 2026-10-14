@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>多乐的作品墙</title>
+  <link rel="preload" href="/fonts/ZCOOLKuaiLe-Regular.ttf" as="font" type="font/ttf" crossorigin />
+  <link rel="stylesheet" href="/shared-nav.css?v=20261014-gallery" />
+  <link rel="stylesheet" href="/gallery.css?v=20261014-gallery" />
+</head>
+<body>
+  <a class="skip-link" href="#galleryContent">跳到作品墙</a>
+  <nav id="siteNav" class="site-nav" aria-label="主导航"></nav>
+  <main id="galleryContent" class="gallery-shell" tabindex="-1">
+    <header class="page-toolbar">
+      <div>
+        <p class="eyebrow">Artwork Wall</p>
+        <h1>多乐的作品墙</h1>
+        <p class="toolbar-note">点开一幅画就能放大看，还能左右翻看前一幅和后一幅。</p>
+      </div>
+      <div class="toolbar-actions">
+        <button id="refreshButton" class="icon-command" type="button" title="刷新" aria-label="刷新作品墙">↻</button>
+      </div>
+    </header>
+
+    <section class="wall-board" aria-labelledby="wallTitle">
+      <div class="wall-heading">
+        <div><p class="eyebrow">Little Gallery</p><h2 id="wallTitle">画墙</h2></div>
+        <p id="wallStats" class="result-count" aria-live="polite"></p>
+      </div>
+      <div id="artworkWall" class="artwork-wall" aria-live="polite"><div class="loading-card">正在把画挂上墙…</div></div>
+    </section>
+  </main>
+
+  <dialog id="artworkViewer" class="artwork-viewer" aria-labelledby="viewerTitle">
+    <div class="viewer-shell">
+      <button id="viewerClose" class="viewer-close" type="button" aria-label="关闭大图">✕</button>
+      <div class="viewer-stage">
+        <button id="viewerPrev" class="viewer-nav viewer-prev" type="button" aria-label="上一幅作品">←</button>
+        <figure class="viewer-frame">
+          <img id="viewerImage" class="viewer-image" alt="" />
+        </figure>
+        <button id="viewerNext" class="viewer-nav viewer-next" type="button" aria-label="下一幅作品">→</button>
+      </div>
+      <div class="viewer-caption">
+        <p id="viewerMeta" class="viewer-meta" aria-live="polite"></p>
+        <h2 id="viewerTitle" class="viewer-title"></h2>
+        <p id="viewerDate" class="viewer-date"></p>
+        <button id="viewerAudio" class="primary-command viewer-audio" type="button" aria-pressed="false" hidden>▶ 听多乐讲讲这幅画</button>
+        <audio id="viewerAudioElement" preload="none"></audio>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="pinDialog" class="app-dialog pin-dialog">
+    <form id="pinForm" class="pin-form">
+      <span class="pin-symbol" aria-hidden="true">🔐</span><h2 id="pinTitle">家长解锁</h2><p id="pinHint">输入家长 PIN 后解锁这台设备。</p>
+      <label for="pinInput">家长 PIN</label><input id="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="12" required autocomplete="current-password" />
+      <p id="pinError" class="form-error" role="alert"></p>
+      <div class="dialog-actions"><button id="cancelPinButton" class="secondary-command" type="button">取消</button><button class="primary-command" type="submit">确认</button></div>
+    </form>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/gallery.js?v=20261014-gallery" type="module"></script>
+</body>
+</html>

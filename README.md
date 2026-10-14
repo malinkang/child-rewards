@@ -20,6 +20,7 @@ Browser
                  ├─ 课外课程
                  ├─ 上课记录
                  ├─ 诗文馆
+                 ├─ 多乐作品墙
                  └─ 甜心礼品屋
 ```
 
@@ -135,6 +136,21 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 | `作者` | Relation | 关联作者页，只读取页面标题 |
 | `序号` | Number | 升序展示，缺省值排到最后 |
 
+### 多乐作品墙
+
+公开只读的画作墙，来源为 Notion 数据库「多乐作品墙」（通过 `NOTION_ARTWORKS_DATABASE_ID` 配置）。应用不写入该表，也不发放星星。
+
+| 属性 | 类型 | 用途 |
+| --- | --- | --- |
+| `作品` | Title | 作品名称，如 `多乐作品 01` |
+| `序号` | Number | 升序展示，缺省或无效值排到最后 |
+| `描述` | Rich text | 多乐的讲述；墙面和放大视图优先展示，缺失时回退到作品名 |
+| `上传时间` | Date | 上传时间，按 `Asia/Shanghai` 显示 |
+| `图片` | Files | 作品图片；页面正文没有 image 区块时才使用的回退来源 |
+| `音频` | Files | 讲述音频；页面正文没有 audio 区块时才使用的回退来源，不自动播放 |
+
+作品正文区块是媒体的事实来源：每个页面的第一个 `image` 区块和第一个 `audio` 区块优先，`图片`、`音频` 属性只作为 HTTP(S) 回退（部分作品在上传后重新修正过旋转方向）。媒体 URL 不返回浏览器，统一由 Worker 代理。
+
 ## API
 
 | Method | Path | Description |
@@ -142,6 +158,8 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 | `GET` | `/api/rewards` | 获取固定任务、星星记录和 Rollup 余额 |
 | `GET` | `/api/gifts` | 获取已启用礼品 |
 | `GET` | `/api/poetry` | 获取全部诗文、统计及筛选所需字段（公开只读，缓存 60 秒） |
+| `GET` | `/api/artworks` | 获取全部作品、讲述、日期及同源媒体路径（公开只读，缓存 60 秒） |
+| `GET` | `/api/artwork-media/:pageId/(image\|audio)` | 公开代理作品图片或讲述音频，校验归属后转发并保留 Range |
 | `GET` | `/api/auth` | 获取当前设备授权状态 |
 | `POST` | `/api/auth/login` | 使用家长 PIN 授权当前设备 30 天 |
 | `POST` | `/api/auth/logout` | 锁定当前设备 |
@@ -174,12 +192,15 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 - `NOTION_COURSES_DATABASE_ID`
 - `NOTION_CLASS_RECORDS_DATABASE_ID`
 - `NOTION_POETRY_DATABASE_ID`
+- `NOTION_ARTWORKS_DATABASE_ID`
+- `NOTION_ARTWORKS_DATA_SOURCE_ID`
 - `NOTION_QIQIXUE_TASK_ID`
 - `NOTION_VERSION`
 
 Secret：
 
 - `NOTION_TOKEN`
+- `NOTION_ARTWORKS_TOKEN`（可选，仅覆盖作品墙的 Notion 读取）
 - `AUTH_PIN`
 - `AUTH_SECRET`
 - `QIQIXUE_SYNC_TOKEN`（仅授权学习导入，另存于 GitHub Actions Secrets）
@@ -202,6 +223,8 @@ npm test
 npm run check
 # 可选：真实浏览器回归 /poetry 与 /poetry/（需要本机 Playwright）
 PLAYWRIGHT_PATH=/path/to/playwright/index.mjs npm run check:browser
+# 可选：真实浏览器回归 /gallery 与 /gallery/（需要本机 Playwright）
+PLAYWRIGHT_PATH=/path/to/playwright/index.mjs npm run check:browser:gallery
 ```
 
 ## Deployment
@@ -218,6 +241,7 @@ npm run deploy
 ```bash
 curl https://child.malinkang.com/api/rewards
 curl https://child.malinkang.com/api/gifts
+curl https://child.malinkang.com/api/artworks
 ```
 
 再打开线上页面确认固定任务、余额、媒体预览和浏览器控制台。
@@ -251,6 +275,12 @@ curl https://child.malinkang.com/api/gifts
 - 作者关系按唯一作者页解析；请求按约 3 次/秒限速，遇到限流或临时错误会重试，解析失败的作者显示为「作者未标注」。
 - 诗文响应缓存 60 秒并合并并发请求，失败结果不缓存；只有成功响应返回 `Cache-Control: public, max-age=60`。
 - 页面只渲染 HTTP(S) 链接和音频，所有 Notion 文本在渲染前转义。
+- 作品墙是公开只读页面，不要求设备授权，也不提供写入或奖励。
+- `/api/artworks` 按 `序号` 升序返回未归档作品；缺失或异常字段不会中断整页，无效日期不显示。
+- 作品媒体优先取页面正文的第一个 image/audio 区块，回退到 `图片`、`音频` 属性；单个作品读取失败不影响整墙。
+- 作品媒体只通过 `/api/artwork-media/:pageId/(image|audio)` 代理，校验页面归属后转发并保留 Range；Notion 或签名 URL 不返回浏览器。
+- 作品响应缓存 60 秒并合并并发请求；媒体地址缓存 30 分钟后刷新，失败结果不缓存。
+- 墙面用纯 CSS 画框平铺全部作品，点击放大后可用左右键、按钮或滑动循环切换，显示北京日期和讲述音频（不自动播放）。
 
 ## Voice Feedback
 

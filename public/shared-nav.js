@@ -1,6 +1,7 @@
 const NAV_ITEMS = [
   { id: 'home', label: '星星屋', icon: '⭐', href: '/' },
   { id: 'poetry', label: '诗文馆', icon: '📜', href: '/poetry' },
+  { id: 'gallery', label: '作品墙', icon: '🎨', href: '/gallery' },
   { id: 'classes', label: '上课记录', icon: '📅', href: '/classes', protected: true },
 ];
 

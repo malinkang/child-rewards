@@ -17,11 +17,13 @@ This repository is a personal child-rewards application deployed at `https://chi
 - `public/rewards-heatmap.js`: Beijing-date grouping and annual calendar layout for earned-star history.
 - `public/poetry.html`, `public/poetry.css`, `public/poetry.js`: public read-only poetry library page, styling, and rendering.
 - `public/poetry-library.js`: framework-free, side-effect-free poetry filtering, search, option ordering, escaping, and URL safety helpers (unit tested).
+- `public/gallery.html`, `public/gallery.css`, `public/gallery.js`: public read-only artwork wall page, frame/wall styling, and the enlarged viewer.
+- `public/gallery-model.js`: framework-free, side-effect-free artwork normalization, safe media-path validation, Asia/Shanghai date formatting, and wrap-around stepping helpers (unit tested).
 - `src/index.js`: Cloudflare Worker router, validation, Notion reads/writes, media uploads, and static asset fallback.
 - `src/qiqixue-sync.js`: machine-only learning import and per-source Durable Object deduplication.
 - `scripts/sync-qiqixue.mjs`, `scripts/qiqixue.mjs`: GitHub Actions source fetch, validation, and sequential import.
 - `wrangler.toml`: Worker deployment, custom domain, and non-secret Notion identifiers.
-- `NOTION_TOKEN`, `AUTH_PIN`, and `AUTH_SECRET`: Cloudflare Secrets only. Never write them to files, output, frontend code, commits, or logs.
+- `NOTION_TOKEN`, `AUTH_PIN`, and `AUTH_SECRET`: Cloudflare Secrets only. Never write them to files, output, frontend code, commits, or logs. `NOTION_ARTWORKS_TOKEN` is an optional Cloudflare Secret that overrides `NOTION_TOKEN` for the artwork wall only.
 
 Data flow:
 
@@ -123,6 +125,17 @@ Property names are exact API contracts. If a property is renamed in Notion, upda
 
 The poetry database ID is `NOTION_POETRY_DATABASE_ID` in `wrangler.toml`. The library is read-only: it never writes to Notion and never awards stars.
 
+### 多乐作品墙
+
+- `作品`: title
+- `序号`: number (ascending; missing or invalid sorts last)
+- `描述`: rich_text (child's narration; the wall and viewer use it as the primary label and fall back to the title)
+- `上传时间`: date (UTC instants; render in Asia/Shanghai)
+- `图片`: files (HTTP(S) only; fallback when the page body has no image block)
+- `音频`: files (HTTP(S) only; fallback when the page body has no audio block, never autoplayed)
+
+Media truth is the page body: the first `image` block and first `audio` block win, because artwork rows may be re-uploaded (rotation fixes) after the files properties were written. The database ID is `NOTION_ARTWORKS_DATABASE_ID` and its data source is `NOTION_ARTWORKS_DATA_SOURCE_ID` in `wrangler.toml`. The wall is read-only: it never writes to Notion and never awards stars.
+
 Database and singleton balance-page IDs are configured through `wrangler.toml`. The API version is `2022-06-28` for database/page operations and `2025-09-03` for Notion file-upload operations.
 
 ## Business Invariants
@@ -150,12 +163,19 @@ Database and singleton balance-page IDs are configured through `wrangler.toml`. 
 - Poetry responses use a bounded 60-second cache with in-flight coalescing scoped by source configuration; failed loads are never cached and only successful reads return `Cache-Control: public, max-age=60, s-maxage=60`.
 - Author relations resolve once per refresh through bounded concurrency with ~3 req/s pacing and retry on 429/5xx; an unresolved author renders as `作者未标注`.
 - Only HTTP(S) source links and audio URLs reach the browser; all Notion text is escaped before rendering.
+- The artwork wall at `/gallery` and `/gallery/` is public and read-only: no device cookie, no writes, and no stars.
+- `/api/artworks` sorts by ascending numeric `序号` (missing/invalid last, tie-break title then id), tolerates malformed rows, and returns only title, description, order, date, and same-origin media paths.
+- Artwork media resolution prefers the first page-body `image`/`audio` file block and falls back to the `图片`/`音频` files property. One failing page must never fail the whole wall.
+- Artwork media streams only through `/api/artwork-media/:pageId/(image|audio)`, after validating the page belongs to the artworks database and is active. Never return Notion or signed URLs to the browser or logs; preserve `Range` for audio seeking.
+- Artwork payloads use a bounded 60-second cache with in-flight coalescing; media source URLs are cached 30 minutes (below signed-URL expiry) and dropped after a failed fetch. Successful media responses return `Cache-Control: public, max-age=300, s-maxage=3600`.
 
 ## API Surface
 
 - `GET /api/rewards`: permanent task templates plus the complete active ledger and Rollup balance.
 - `GET /api/gifts`: enabled gifts ordered by `排序` and creation time.
 - `GET /api/poetry`: public read-only poetry library: poems ordered by `序号` plus observed totals and filter values.
+- `GET /api/artworks`: public read-only artwork wall: artworks ordered by `序号` with description, Beijing-time date, and same-origin media paths.
+- `GET /api/artwork-media/:pageId/(image|audio)`: public proxy for artwork media after validating page/database ownership; never exposes the source URL.
 - `GET /api/auth`: returns whether the current device has a valid signed authorization cookie.
 - `POST /api/auth/login`: validates the parent PIN and issues the 30-day HttpOnly cookie.
 - `POST /api/auth/logout`: expires the authorization cookie.
@@ -210,6 +230,10 @@ When adding an endpoint, update `README.md`, this file, and proportional tests i
 - The poetry page must load every asset from root-absolute URLs (`/poetry.css`, `/poetry.js`, `/shared-nav.css`, `/fonts/...`) so that both `/poetry` and `/poetry/` work.
 - Poetry filters combine school stage, grade, and recitation status with free-text search over title, author, dynasty, and body; grade choices follow textbook order and reset when incompatible with the selected stage.
 - Keep poetry detail cards as native `<details>`/`<summary>` disclosures, keep original line breaks in `原文`, and use only escaped text and HTTP(S) links or audio.
+- The artwork wall page must load every asset from root-absolute URLs (`/gallery.css`, `/gallery.js`, `/shared-nav.css`, `/fonts/...`) so that both `/gallery` and `/gallery/` work.
+- Wall frames stay pure CSS (dark frame line, white matte, inner hairline, offset shadow) with a white label card. Primary label text is `描述`, else `作品`, else `未命名作品`; the meta line carries the artwork name and its Beijing date, plus a 🔊 badge when narration exists.
+- Clicking a frame opens the enlarged viewer. Keep the framed image, circular prev/next buttons, the `第 N / M 幅` counter, the child's narration text, the date, and an optional play button for the narration audio. Navigation wraps; `ArrowLeft`/`ArrowRight`, ~48px pointer swipes, backdrop clicks, and `Escape` all work, and focus returns to the frame that opened the viewer.
+- Never render non-`/api/artwork-media/...` media paths, never autoplay narration audio, stop and reset audio when switching or closing, and escape all Notion text before rendering.
 - Respect `prefers-reduced-motion` and keep desktop/mobile layouts free of horizontal overflow.
 
 ## Verification
@@ -221,6 +245,8 @@ node --check src/index.js
 node --check public/app.js
 node --check public/poetry.js
 node --check public/poetry-library.js
+node --check public/gallery.js
+node --check public/gallery-model.js
 git diff --check
 npm test
 npm run check
@@ -230,6 +256,12 @@ Optional real-browser regression for the poetry page (requires a local Playwrigh
 
 ```bash
 PLAYWRIGHT_PATH=/path/to/playwright/index.mjs npm run check:browser
+```
+
+Optional real-browser regression for the artwork wall (same Playwright setup, no real Notion access):
+
+```bash
+PLAYWRIGHT_PATH=/path/to/playwright/index.mjs npm run check:browser:gallery
 ```
 
 For local integration testing, run Wrangler with `.dev.vars`, then verify:
@@ -242,12 +274,15 @@ For local integration testing, run Wrangler with `.dev.vars`, then verify:
 - Audio assets return HTTP 200, the sound toggle persists, and state-specific clips are selected correctly.
 - `/api/poetry` returns every non-archived poem in ascending `序号` order with observed totals, and `/poetry` plus `/poetry/` load every asset (no 404s on `/poetry/poetry.js`).
 - Poetry stage/grade/status filters, search by title/author/dynasty/body, and the reset control behave together; grade options follow textbook order and reset when the stage changes.
+- `/api/artworks` returns every non-archived artwork in ascending `序号` order with only same-origin media paths, and `/gallery` plus `/gallery/` load every asset (no 404s on `/gallery/gallery.js`).
+- Clicking a wall frame opens the viewer with the date; arrow keys and buttons wrap around; image and audio bytes stream through `/api/artwork-media/...` with correct content types and working `Range`.
 - Temporary Notion pages are archived by exact ID, their balance relations disappear from the Rollup, and the original balance is restored.
 
 After deployment:
 
 - Verify `https://child.malinkang.com/api/rewards` and `/api/gifts`.
 - Verify `https://child.malinkang.com/api/poetry`, `/poetry` and `/poetry/`; the poetry counts come from the live response, not from this document.
+- Verify `https://child.malinkang.com/api/artworks`, `/gallery` and `/gallery/`; the artwork count and media come from the live response, and no Notion URL appears in the payload.
 - Open a cache-busted page URL if browser state appears stale.
 - Check desktop/mobile overflow and browser console errors.
 - Confirm the Notion ledger contains no temporary active records.

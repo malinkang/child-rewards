@@ -80,7 +80,7 @@ async function inspectPage(browser, port, pathname) {
     overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
   }));
   assert(summary.cards === 3, `${pathname}: expected 3 poem cards, saw ${summary.cards}`);
-  assert(summary.navLinks === 3, `${pathname}: expected 3 nav links, saw ${summary.navLinks}`);
+  assert(summary.navLinks === 4, `${pathname}: expected 4 nav links, saw ${summary.navLinks}`);
   assert(summary.current.includes('诗文馆'), `${pathname}: expected current nav item 诗文馆, saw ${summary.current}`);
   assert(summary.overflow <= 1, `${pathname}: horizontal overflow of ${summary.overflow}px at desktop width`);
   const progress = await page.evaluate(() => {

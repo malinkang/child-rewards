@@ -12,6 +12,18 @@ const POETRY_CACHE_TTL_MS = 60 * 1000;
 const POETRY_AUTHOR_CONCURRENCY = 4;
 const POETRY_MASTERED_STATUSES = new Set(['已掌握', '已背诵', '背诵完成', '掌握']);
 const POETRY_CACHE_MAX_ENTRIES = 8;
+const ARTWORK_HEADERS = { ...JSON_HEADERS, 'Cache-Control': 'public, max-age=60, s-maxage=60' };
+const ARTWORK_CACHE_TTL_MS = 60 * 1000;
+const ARTWORK_CACHE_MAX_ENTRIES = 8;
+// Notion signs media URLs for roughly an hour; refresh the lookup comfortably
+// before that instead of ever handing a stale signature to the proxy.
+const ARTWORK_MEDIA_CACHE_TTL_MS = 30 * 60 * 1000;
+const ARTWORK_MEDIA_CACHE_MAX_ENTRIES = 200;
+const ARTWORK_MEDIA_CONCURRENCY = 4;
+const ARTWORK_MEDIA_INTERVAL_MS = 340;
+const ARTWORK_MEDIA_MAX_ATTEMPTS = 3;
+const ARTWORK_MEDIA_MAX_BLOCK_PAGES = 4;
+const ARTWORK_MEDIA_CACHE_CONTROL = 'public, max-age=300, s-maxage=3600';
 // Notion allows roughly 3 requests per second averaged; pace author lookups just
 // under that and retry rate-limited responses instead of losing the author.
 const POETRY_NOTION_INTERVAL_MS = 340;
@@ -21,6 +33,9 @@ const failedLogins = new Map();
 const recentWrites = new Map();
 const poetryCache = new Map();
 const poetryInFlight = new Map();
+const artworkCache = new Map();
+const artworkInFlight = new Map();
+const artworkMediaCache = new Map();
 
 export default {
   async fetch(request, env) {
@@ -40,6 +55,14 @@ export default {
         // Await inside the try so Notion/cache failures become the generic 500
         // response instead of an unhandled rejection from the Worker runtime.
         return await getPoetry(env);
+      }
+      if (url.pathname === '/api/artworks' && request.method === 'GET') {
+        // Same failure handling as poetry: bad upstream reads become a 500.
+        return await getArtworks(env);
+      }
+      const artworkMediaMatch = url.pathname.match(/^\/api\/artwork-media\/([0-9a-f-]{32,36})\/(image|audio)$/i);
+      if (artworkMediaMatch && request.method === 'GET') {
+        return getArtworkMedia(request, env, artworkMediaMatch[1], artworkMediaMatch[2]);
       }
       if (url.pathname === '/api/classes' && request.method === 'GET') {
         return requireAuthorized(request, env, () => getClasses(url, env));
@@ -96,6 +119,9 @@ export default {
       }
       if (url.pathname === '/poetry' || url.pathname === '/poetry/') {
         return env.ASSETS.fetch(new Request(new URL('/poetry.html', request.url), request));
+      }
+      if (url.pathname === '/gallery' || url.pathname === '/gallery/') {
+        return env.ASSETS.fetch(new Request(new URL('/gallery.html', request.url), request));
       }
       return env.ASSETS.fetch(request);
     } catch (error) {
@@ -450,6 +476,275 @@ function httpUrl(value) {
   return /^https?:\/\//i.test(trimmed) ? trimmed : '';
 }
 
+function artworksNotionToken(env) {
+  return env.NOTION_ARTWORKS_TOKEN || env.NOTION_TOKEN;
+}
+
+function worksCacheKey(env) {
+  return `${normalizeNotionId(env.NOTION_ARTWORKS_DATABASE_ID)}:${env.NOTION_VERSION || '2022-06-28'}`;
+}
+
+function requireArtworksConfig(env) {
+  if (!artworksNotionToken(env) || !env.NOTION_ARTWORKS_DATABASE_ID) {
+    throw new Error('Artworks database is not configured');
+  }
+}
+
+async function getArtworks(env) {
+  requireArtworksConfig(env);
+  const key = worksCacheKey(env);
+  const cached = artworkCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return Response.json(cached.payload, { headers: ARTWORK_HEADERS });
+  }
+  if (cached) artworkCache.delete(key);
+  let promise = artworkInFlight.get(key);
+  if (!promise) {
+    promise = loadArtworks(env)
+      .then((payload) => {
+        artworkCache.set(key, { expiresAt: Date.now() + ARTWORK_CACHE_TTL_MS, payload });
+        while (artworkCache.size > ARTWORK_CACHE_MAX_ENTRIES) {
+          artworkCache.delete(artworkCache.keys().next().value);
+        }
+        return payload;
+      })
+      .finally(() => { if (artworkInFlight.get(key) === promise) artworkInFlight.delete(key); });
+    artworkInFlight.set(key, promise);
+  }
+  // Failed loads reject here, are never cached, and drop out of the in-flight map.
+  return Response.json(await promise, { headers: ARTWORK_HEADERS });
+}
+
+async function loadArtworks(env) {
+  const pages = await queryAll(env.NOTION_ARTWORKS_DATABASE_ID, env, {
+    sorts: [{ property: '序号', direction: 'ascending' }],
+  }, { token: artworksNotionToken(env) });
+  const activePages = pages.filter((page) => !page.archived && !page.in_trash);
+  const media = await resolveArtworkMediaBatch(activePages, env);
+  const artworks = activePages.map((page) => mapArtwork(page, media.get(page.id))).sort(compareArtworks);
+  return {
+    artworks,
+    stats: {
+      count: artworks.length,
+      withDescription: artworks.filter((artwork) => artwork.description).length,
+      withAudio: artworks.filter((artwork) => artwork.audio).length,
+    },
+    refreshedAt: new Date().toISOString(),
+  };
+}
+
+function compareArtworks(left, right) {
+  const leftOrder = Number.isFinite(left.order) ? left.order : Infinity;
+  const rightOrder = Number.isFinite(right.order) ? right.order : Infinity;
+  if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+  const byTitle = left.title.localeCompare(right.title, 'zh-Hans-CN');
+  return byTitle !== 0 ? byTitle : left.id.localeCompare(right.id);
+}
+
+// Page-body file blocks are the source of truth: they hold the corrected
+// rotation and live in Notion. The files properties are only a fallback.
+async function resolveArtworkMediaBatch(pages, env) {
+  const media = new Map();
+  const missing = [];
+  for (const page of pages) {
+    const cachedFiles = readArtworkMediaCache(env, page.id);
+    if (cachedFiles) media.set(page.id, cachedFiles);
+    else missing.push(page);
+  }
+  if (missing.length) {
+    const pace = createPacer(ARTWORK_MEDIA_INTERVAL_MS);
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < missing.length) {
+        const page = missing[cursor];
+        cursor += 1;
+        media.set(page.id, await resolveArtworkMediaForPage(page, env, pace));
+      }
+    };
+    const workers = Math.min(ARTWORK_MEDIA_CONCURRENCY, missing.length);
+    await Promise.all(Array.from({ length: workers }, worker));
+  }
+  return media;
+}
+
+async function resolveArtworkMediaForPage(page, env, pace) {
+  let blockFiles = null;
+  try {
+    blockFiles = await fetchArtworkBlockFiles(page.id, env, pace);
+  } catch {
+    // One broken page must not take down the whole wall; fall back to files.
+    blockFiles = null;
+  }
+  const files = {
+    image: blockFiles?.image || artworkPropertyFile(page, '图片', 'image'),
+    audio: blockFiles?.audio || artworkPropertyFile(page, '音频', 'audio'),
+  };
+  writeArtworkMediaCache(env, page.id, files);
+  return files;
+}
+
+async function fetchArtworkBlockFiles(pageId, env, pace) {
+  const token = artworksNotionToken(env);
+  const files = { image: null, audio: null };
+  let cursor = null;
+  for (let page = 0; page < ARTWORK_MEDIA_MAX_BLOCK_PAGES; page += 1) {
+    let data = null;
+    for (let attempt = 1; attempt <= ARTWORK_MEDIA_MAX_ATTEMPTS; attempt += 1) {
+      await pace();
+      let response;
+      try {
+        const search = new URLSearchParams({ page_size: '100' });
+        if (cursor) search.set('start_cursor', cursor);
+        response = await fetch(`${NOTION_API}/blocks/${pageId}/children?${search}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Notion-Version': env.NOTION_VERSION || '2022-06-28',
+          },
+        });
+      } catch {
+        if (attempt === ARTWORK_MEDIA_MAX_ATTEMPTS) throw new Error('Notion blocks request failed');
+        await sleep(300 * attempt);
+        continue;
+      }
+      if (response.ok) {
+        data = await response.json().catch(() => null);
+        break;
+      }
+      const retryable = response.status === 429 || response.status === 529 || response.status >= 500;
+      if (!retryable || attempt === ARTWORK_MEDIA_MAX_ATTEMPTS) {
+        throw new Error(`Notion ${response.status}: block_lookup_failed`);
+      }
+      await sleep(retryAfterMs(response.headers.get('Retry-After'), attempt));
+    }
+    if (!data) break;
+    for (const block of data.results || []) {
+      const kind = block?.type === 'image' || block?.type === 'audio' ? block.type : '';
+      if (!kind || files[kind]) continue;
+      const file = kind === 'image' ? block.image : block.audio;
+      if (file?.type === 'file' || file?.type === 'external') {
+        files[kind] = artworkBlockFile(file, kind);
+      }
+    }
+    const hasMore = data.has_more === true && typeof data.next_cursor === 'string';
+    if (!hasMore || (files.image && files.audio)) break;
+    cursor = data.next_cursor;
+  }
+  return files;
+}
+
+function artworkBlockFile(file, kind) {
+  const url = httpUrl(file?.type === 'file' ? file.file?.url : file?.external?.url);
+  if (!url) return null;
+  return {
+    type: file.type,
+    name: artworkFileName(url, kind),
+    file: file.file,
+    external: file.external,
+  };
+}
+
+function artworkPropertyFile(page, propertyName, kind) {
+  const file = page.properties?.[propertyName]?.files?.[0];
+  if (!file || (file.type !== 'file' && file.type !== 'external')) return null;
+  const url = httpUrl(file.type === 'file' ? file.file?.url : file.external?.url);
+  if (!url) return null;
+  return {
+    type: file.type,
+    name: file.name || artworkFileName(url, kind),
+    file: file.file,
+    external: file.external,
+  };
+}
+
+function artworkFileName(url, kind) {
+  try {
+    const base = decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop() || '');
+    if (/\.(jpe?g|png|gif|webp|bmp|heic|mp3|m4a|aac|wav|ogg|mp4|mov|webm)$/i.test(base)) return base;
+  } catch { /* fall through to the generic name */ }
+  return kind === 'audio' ? 'artwork-audio.mp3' : 'artwork-image.jpg';
+}
+
+function artworkMediaCacheKey(env, pageId) {
+  return `${normalizeNotionId(env.NOTION_ARTWORKS_DATABASE_ID)}:${normalizeNotionId(pageId)}`;
+}
+
+function readArtworkMediaCache(env, pageId) {
+  const key = artworkMediaCacheKey(env, pageId);
+  const entry = artworkMediaCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    artworkMediaCache.delete(key);
+    return null;
+  }
+  // Refresh insertion order so the bound evicts the least recently used page.
+  artworkMediaCache.delete(key);
+  artworkMediaCache.set(key, entry);
+  return entry.files;
+}
+
+function writeArtworkMediaCache(env, pageId, files) {
+  const key = artworkMediaCacheKey(env, pageId);
+  artworkMediaCache.set(key, { files, expiresAt: Date.now() + ARTWORK_MEDIA_CACHE_TTL_MS });
+  while (artworkMediaCache.size > ARTWORK_MEDIA_CACHE_MAX_ENTRIES) {
+    artworkMediaCache.delete(artworkMediaCache.keys().next().value);
+  }
+}
+
+function forgetArtworkMediaCache(env, pageId) {
+  artworkMediaCache.delete(artworkMediaCacheKey(env, pageId));
+}
+
+function artworkPageParentMatches(page, env) {
+  const parentIds = [page.parent?.database_id, page.parent?.data_source_id].map(normalizeNotionId).filter(Boolean);
+  const allowed = [env.NOTION_ARTWORKS_DATABASE_ID, env.NOTION_ARTWORKS_DATA_SOURCE_ID]
+    .map(normalizeNotionId)
+    .filter(Boolean);
+  return parentIds.some((id) => allowed.includes(id));
+}
+
+function mapArtwork(page, files) {
+  const properties = page.properties || {};
+  const mediaId = normalizeNotionId(page.id);
+  return {
+    id: page.id,
+    title: titleText(properties['作品']),
+    description: richText(properties['描述']),
+    order: numberValue(properties['序号']),
+    date: dateValue(properties['上传时间']),
+    image: files?.image ? `/api/artwork-media/${mediaId}/image` : null,
+    audio: files?.audio ? `/api/artwork-media/${mediaId}/audio` : null,
+  };
+}
+
+function dateValue(property) {
+  const start = property?.date?.start;
+  return typeof start === 'string' && !Number.isNaN(Date.parse(start)) ? start : null;
+}
+
+async function getArtworkMedia(request, env, pageId, kind) {
+  requireArtworksConfig(env);
+  const cachedFiles = readArtworkMediaCache(env, pageId);
+  if (cachedFiles) {
+    const response = await streamArtworkMedia(request, cachedFiles[kind]);
+    // A cached signed URL can expire between refreshes; drop it so the next
+    // request resolves a fresh one instead of failing until the TTL passes.
+    if (response.status === 502) forgetArtworkMediaCache(env, pageId);
+    return response;
+  }
+  const page = await notion(`/pages/${pageId}`, env, { token: artworksNotionToken(env) });
+  if (!artworkPageParentMatches(page, env)) {
+    return json({ error: '作品不存在', code: 'NOT_FOUND' }, 404);
+  }
+  if (page.archived || page.in_trash) return json({ error: '作品不存在', code: 'NOT_FOUND' }, 404);
+  const files = await resolveArtworkMediaForPage(page, env, createPacer(ARTWORK_MEDIA_INTERVAL_MS));
+  return streamArtworkMedia(request, files[kind]);
+}
+
+function streamArtworkMedia(request, file) {
+  if (!file) return json({ error: '媒体不存在', code: 'MEDIA_NOT_FOUND' }, 404);
+  return proxyNotionFile(request, file, ARTWORK_MEDIA_CACHE_CONTROL);
+}
+
 async function getClasses(url, env) {
   requireClassesConfig(env);
   const currentYear = Number(shanghaiDateParts().year);
@@ -633,8 +928,8 @@ async function proxyClassMedia(request, env, recordId, index) {
   return proxyNotionFile(request, file);
 }
 
-async function proxyNotionFile(request, file) {
-  const sourceUrl = file.type === 'file' ? file.file?.url : '';
+async function proxyNotionFile(request, file, cacheControl = 'private, no-store') {
+  const sourceUrl = file.type === 'external' ? file.external?.url : file.file?.url;
   if (!sourceUrl) return json({ error: '媒体不可用', code: 'MEDIA_UNAVAILABLE' }, 404);
   const headers = new Headers();
   const range = request.headers.get('Range');
@@ -642,7 +937,7 @@ async function proxyNotionFile(request, file) {
   const response = await fetch(sourceUrl, { headers });
   if (!response.ok && response.status !== 206) return json({ error: '媒体读取失败', code: 'MEDIA_FETCH_FAILED' }, 502);
   const responseHeaders = new Headers({
-    'Cache-Control': 'private, no-store',
+    'Cache-Control': cacheControl,
     'Content-Type': response.headers.get('Content-Type') || mediaContentType(file.name),
     'Accept-Ranges': response.headers.get('Accept-Ranges') || 'bytes',
   });
@@ -1142,6 +1437,10 @@ function mediaContentType(name = '') {
   if (/\.mp4$/i.test(name)) return 'video/mp4';
   if (/\.mov$/i.test(name)) return 'video/quicktime';
   if (/\.webm$/i.test(name)) return 'video/webm';
+  if (/\.m4a$/i.test(name)) return 'audio/mp4';
+  if (/\.mp3$/i.test(name)) return 'audio/mpeg';
+  if (/\.wav$/i.test(name)) return 'audio/wav';
+  if (/\.ogg$/i.test(name)) return 'audio/ogg';
   if (/\.png$/i.test(name)) return 'image/png';
   if (/\.gif$/i.test(name)) return 'image/gif';
   if (/\.webp$/i.test(name)) return 'image/webp';

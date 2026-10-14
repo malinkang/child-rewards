@@ -8,7 +8,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "check": "wrangler deploy --dry-run",
-    "check:browser": "node scripts/check-poetry-page.mjs"
+    "check:browser": "node scripts/check-poetry-page.mjs",
+    "check:browser:gallery": "node scripts/check-gallery-page.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.63.0"
