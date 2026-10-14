@@ -15,6 +15,8 @@ This repository is a personal child-rewards application deployed at `https://chi
 - `public/styles.css`: all responsive styling, illustrations, and motion.
 - `public/app.js`: browser state, rendering, interactions, and calls to `/api/*`.
 - `public/rewards-heatmap.js`: Beijing-date grouping and annual calendar layout for earned-star history.
+- `public/poetry.html`, `public/poetry.css`, `public/poetry.js`: public read-only poetry library page, styling, and rendering.
+- `public/poetry-library.js`: framework-free, side-effect-free poetry filtering, search, option ordering, escaping, and URL safety helpers (unit tested).
 - `src/index.js`: Cloudflare Worker router, validation, Notion reads/writes, media uploads, and static asset fallback.
 - `src/qiqixue-sync.js`: machine-only learning import and per-source Durable Object deduplication.
 - `scripts/sync-qiqixue.mjs`, `scripts/qiqixue.mjs`: GitHub Actions source fetch, validation, and sequential import.
@@ -103,6 +105,24 @@ Property names are exact API contracts. If a property is renamed in Notion, upda
 - `地点`: rich_text
 - `媒体`: files
 
+### 诗文馆
+
+- `标题`: title
+- `原文`: rich_text (render with original line breaks)
+- `学段`: select (小学 / 初中 / 高中; blank rows render as `未标注`)
+- `年级`: select (textbook labels such as `一年级上册`, `高中选择性必修中册`)
+- `板块`: select
+- `背诵状态`: select or status (`复习中` stays distinct; `已掌握` counts as mastered)
+- `计划周次`: rich_text (e.g. `新学第 3 周`, `复习`, `中学长线`)
+- `朝代`: select
+- `类型`: multi_select (all options are rendered)
+- `链接`: url (HTTP(S) only)
+- `音频`: files (HTTP(S) only, never autoplayed)
+- `作者`: relation, resolved through the related page title only
+- `序号`: number (ascending; missing values sort last)
+
+The poetry database ID is `NOTION_POETRY_DATABASE_ID` in `wrangler.toml`. The library is read-only: it never writes to Notion and never awards stars.
+
 Database and singleton balance-page IDs are configured through `wrangler.toml`. The API version is `2022-06-28` for database/page operations and `2025-09-03` for Notion file-upload operations.
 
 ## Business Invariants
@@ -125,11 +145,17 @@ Database and singleton balance-page IDs are configured through `wrangler.toml`. 
 - Class profile, records, avatar, and media are private and require a valid device cookie for every read.
 - Never return Notion class media URLs to the browser. Proxy media only after validating page/database ownership and preserve video Range headers.
 - Class heatmap and summary statistics count only `已完成` and `试听` records in Beijing time.
+- The poetry library at `/poetry` and `/poetry/` is public and read-only: no device cookie is required and no recitation or reward writes exist.
+- `/api/poetry` sorts by ascending numeric `序号` (blank last), tolerates missing or malformed properties, and never hardcodes collection or mastered totals.
+- Poetry responses use a bounded 60-second cache with in-flight coalescing scoped by source configuration; failed loads are never cached and only successful reads return `Cache-Control: public, max-age=60, s-maxage=60`.
+- Author relations resolve once per refresh through bounded concurrency with ~3 req/s pacing and retry on 429/5xx; an unresolved author renders as `作者未标注`.
+- Only HTTP(S) source links and audio URLs reach the browser; all Notion text is escaped before rendering.
 
 ## API Surface
 
 - `GET /api/rewards`: permanent task templates plus the complete active ledger and Rollup balance.
 - `GET /api/gifts`: enabled gifts ordered by `排序` and creation time.
+- `GET /api/poetry`: public read-only poetry library: poems ordered by `序号` plus observed totals and filter values.
 - `GET /api/auth`: returns whether the current device has a valid signed authorization cookie.
 - `POST /api/auth/login`: validates the parent PIN and issues the 30-day HttpOnly cookie.
 - `POST /api/auth/logout`: expires the authorization cookie.
@@ -181,6 +207,9 @@ When adding an endpoint, update `README.md`, this file, and proportional tests i
 - Each task completion may play its task-specific clip; there is no final-task state for repeatable tasks.
 - Preserve the sound toggle, 55% playback volume, and the user's `localStorage` preference.
 - Keep `docs/audio.md` synchronized when adding, replacing, or remapping voice clips.
+- The poetry page must load every asset from root-absolute URLs (`/poetry.css`, `/poetry.js`, `/shared-nav.css`, `/fonts/...`) so that both `/poetry` and `/poetry/` work.
+- Poetry filters combine school stage, grade, and recitation status with free-text search over title, author, dynasty, and body; grade choices follow textbook order and reset when incompatible with the selected stage.
+- Keep poetry detail cards as native `<details>`/`<summary>` disclosures, keep original line breaks in `原文`, and use only escaped text and HTTP(S) links or audio.
 - Respect `prefers-reduced-motion` and keep desktop/mobile layouts free of horizontal overflow.
 
 ## Verification
@@ -190,9 +219,17 @@ Before committing:
 ```bash
 node --check src/index.js
 node --check public/app.js
+node --check public/poetry.js
+node --check public/poetry-library.js
 git diff --check
 npm test
 npm run check
+```
+
+Optional real-browser regression for the poetry page (requires a local Playwright install, no real Notion access):
+
+```bash
+PLAYWRIGHT_PATH=/path/to/playwright/index.mjs npm run check:browser
 ```
 
 For local integration testing, run Wrangler with `.dev.vars`, then verify:
@@ -203,11 +240,14 @@ For local integration testing, run Wrangler with `.dev.vars`, then verify:
 - Spending rejects insufficient balance.
 - A real small image upload appears in the star record and history viewer.
 - Audio assets return HTTP 200, the sound toggle persists, and state-specific clips are selected correctly.
+- `/api/poetry` returns every non-archived poem in ascending `序号` order with observed totals, and `/poetry` plus `/poetry/` load every asset (no 404s on `/poetry/poetry.js`).
+- Poetry stage/grade/status filters, search by title/author/dynasty/body, and the reset control behave together; grade options follow textbook order and reset when the stage changes.
 - Temporary Notion pages are archived by exact ID, their balance relations disappear from the Rollup, and the original balance is restored.
 
 After deployment:
 
 - Verify `https://child.malinkang.com/api/rewards` and `/api/gifts`.
+- Verify `https://child.malinkang.com/api/poetry`, `/poetry` and `/poetry/`; the poetry counts come from the live response, not from this document.
 - Open a cache-busted page URL if browser state appears stale.
 - Check desktop/mobile overflow and browser console errors.
 - Confirm the Notion ledger contains no temporary active records.

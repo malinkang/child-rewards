@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>多乐的诗文馆</title>
+  <link rel="preload" href="/fonts/ZCOOLKuaiLe-Regular.ttf" as="font" type="font/ttf" crossorigin />
+  <link rel="stylesheet" href="/shared-nav.css?v=20261014-poetry" />
+  <link rel="stylesheet" href="/poetry.css?v=20261014-poetry" />
+</head>
+<body>
+  <a class="skip-link" href="#poetryContent">跳到诗文列表</a>
+  <nav id="siteNav" class="site-nav" aria-label="主导航"></nav>
+  <main id="poetryContent" class="poetry-shell" tabindex="-1">
+    <header class="page-toolbar">
+      <div><p class="eyebrow">Poetry Garden</p><h1>多乐的诗文馆</h1><p class="toolbar-note">古诗文可以慢慢读，点击卡片就能展开原文、作者和朗读。</p></div>
+      <div class="toolbar-actions">
+        <button id="refreshButton" class="icon-command" type="button" title="刷新" aria-label="刷新诗文馆">↻</button>
+      </div>
+    </header>
+
+    <section class="stats-board" id="poetryStats" aria-label="诗文统计"></section>
+
+    <section class="library-board" aria-labelledby="libraryTitle">
+      <div class="library-heading">
+        <div><p class="eyebrow">Reading Shelf</p><h2 id="libraryTitle">诗文书架</h2></div>
+        <p id="resultCount" class="result-count" aria-live="polite"></p>
+      </div>
+
+      <div class="search-row">
+        <label class="search-control" for="searchInput"><span aria-hidden="true">🔍</span><span class="visually-hidden">搜索诗文</span><input id="searchInput" type="search" placeholder="搜索标题、作者、朝代或诗句" autocomplete="off" /></label>
+        <button id="resetButton" class="secondary-command" type="button">重置筛选</button>
+      </div>
+
+      <div class="filter-group" role="group" aria-label="按学段筛选"><span class="filter-label">学段</span><div class="filter-row" id="stageFilters"></div></div>
+      <div class="filter-group" role="group" aria-label="按年级筛选"><span class="filter-label">年级</span><div class="filter-row" id="gradeFilters"></div></div>
+      <div class="filter-group" role="group" aria-label="按背诵状态筛选"><span class="filter-label">状态</span><div class="filter-row" id="statusFilters"></div></div>
+
+      <div id="poetryResults" class="poetry-results" aria-live="polite"><div class="loading-card">正在把诗文一本本摆上书架...</div></div>
+    </section>
+  </main>
+
+  <dialog id="pinDialog" class="app-dialog pin-dialog">
+    <form id="pinForm" class="pin-form">
+      <span class="pin-symbol" aria-hidden="true">🔐</span><h2 id="pinTitle">家长解锁</h2><p id="pinHint">输入家长 PIN 后解锁这台设备。</p>
+      <label for="pinInput">家长 PIN</label><input id="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="12" required autocomplete="current-password" />
+      <p id="pinError" class="form-error" role="alert"></p>
+      <div class="dialog-actions"><button id="cancelPinButton" class="secondary-command" type="button">取消</button><button class="primary-command" type="submit">确认</button></div>
+    </form>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/poetry.js?v=20261014-poetry" type="module"></script>
+</body>
+</html>

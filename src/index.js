@@ -5,10 +5,22 @@ const NOTION_API = 'https://api.notion.com/v1';
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 const NO_STORE_HEADERS = { ...JSON_HEADERS, 'Cache-Control': 'no-store' };
 const GIFT_HEADERS = { ...JSON_HEADERS, 'Cache-Control': 'public, max-age=60, s-maxage=60' };
+const POETRY_HEADERS = { ...JSON_HEADERS, 'Cache-Control': 'public, max-age=60, s-maxage=60' };
 const AUTH_COOKIE = 'child_rewards_auth';
 const AUTH_MAX_AGE = 30 * 24 * 60 * 60;
+const POETRY_CACHE_TTL_MS = 60 * 1000;
+const POETRY_AUTHOR_CONCURRENCY = 4;
+const POETRY_MASTERED_STATUSES = new Set(['已掌握', '已背诵', '背诵完成', '掌握']);
+const POETRY_CACHE_MAX_ENTRIES = 8;
+// Notion allows roughly 3 requests per second averaged; pace author lookups just
+// under that and retry rate-limited responses instead of losing the author.
+const POETRY_NOTION_INTERVAL_MS = 340;
+const POETRY_AUTHOR_MAX_ATTEMPTS = 3;
+const POETRY_AUTHOR_MAX_RETRY_WAIT_MS = 5000;
 const failedLogins = new Map();
 const recentWrites = new Map();
+const poetryCache = new Map();
+const poetryInFlight = new Map();
 
 export default {
   async fetch(request, env) {
@@ -23,6 +35,11 @@ export default {
       }
       if (url.pathname === '/api/rewards' && request.method === 'GET') {
         return getRewards(env);
+      }
+      if (url.pathname === '/api/poetry' && request.method === 'GET') {
+        // Await inside the try so Notion/cache failures become the generic 500
+        // response instead of an unhandled rejection from the Worker runtime.
+        return await getPoetry(env);
       }
       if (url.pathname === '/api/classes' && request.method === 'GET') {
         return requireAuthorized(request, env, () => getClasses(url, env));
@@ -76,6 +93,9 @@ export default {
       }
       if (url.pathname === '/classes' || url.pathname === '/classes/') {
         return env.ASSETS.fetch(new Request(new URL('/classes.html', request.url), request));
+      }
+      if (url.pathname === '/poetry' || url.pathname === '/poetry/') {
+        return env.ASSETS.fetch(new Request(new URL('/poetry.html', request.url), request));
       }
       return env.ASSETS.fetch(request);
     } catch (error) {
@@ -175,6 +195,253 @@ async function getRewards(env) {
   const tasks = taskPages.map(mapTask).filter((task) => task.name && task.stars > 0);
   const ledger = recordPages.map(mapLedgerEntry);
   return Response.json({ tasks, ledger, balance }, { headers: NO_STORE_HEADERS });
+}
+
+function poetryCacheKey(env) {
+  return `${normalizeNotionId(env.NOTION_POETRY_DATABASE_ID)}:${env.NOTION_VERSION || '2022-06-28'}`;
+}
+
+async function getPoetry(env) {
+  requirePoetryConfig(env);
+  const key = poetryCacheKey(env);
+  const cached = poetryCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return Response.json(cached.payload, { headers: POETRY_HEADERS });
+  }
+  if (cached) poetryCache.delete(key);
+  let promise = poetryInFlight.get(key);
+  if (!promise) {
+    promise = loadPoetry(env)
+      .then((payload) => {
+        poetryCache.set(key, { expiresAt: Date.now() + POETRY_CACHE_TTL_MS, payload });
+        trimPoetryCache();
+        return payload;
+      })
+      .finally(() => { if (poetryInFlight.get(key) === promise) poetryInFlight.delete(key); });
+    poetryInFlight.set(key, promise);
+  }
+  // Failed loads reject here, are never cached, and drop out of the in-flight map.
+  return Response.json(await promise, { headers: POETRY_HEADERS });
+}
+
+function trimPoetryCache() {
+  while (poetryCache.size > POETRY_CACHE_MAX_ENTRIES) {
+    poetryCache.delete(poetryCache.keys().next().value);
+  }
+}
+
+async function loadPoetry(env) {
+  const pages = await queryAll(env.NOTION_POETRY_DATABASE_ID, env, {
+    sorts: [{ property: '序号', direction: 'ascending' }],
+  });
+  const activePages = pages.filter((page) => !page.archived && !page.in_trash);
+  const authorNames = await resolvePoemAuthors(activePages, env);
+  const poems = activePages.map((page) => mapPoem(page, authorNames)).sort(comparePoems);
+  return {
+    poems,
+    stats: summarizePoetry(poems),
+    refreshedAt: new Date().toISOString(),
+  };
+}
+
+function comparePoems(left, right) {
+  const leftOrder = Number.isFinite(left.order) ? left.order : Infinity;
+  const rightOrder = Number.isFinite(right.order) ? right.order : Infinity;
+  if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+  return left.title.localeCompare(right.title, 'zh-Hans-CN');
+}
+
+async function resolvePoemAuthors(pages, env) {
+  const ids = new Set();
+  for (const page of pages) {
+    for (const relation of relationIds(page, '作者')) ids.add(relation);
+  }
+  const uniqueIds = [...ids];
+  const titles = new Map();
+  const pace = createPacer(POETRY_NOTION_INTERVAL_MS);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < uniqueIds.length) {
+      const pageId = uniqueIds[cursor];
+      cursor += 1;
+      const title = await fetchAuthorTitle(pageId, env, pace);
+      if (title !== null) titles.set(pageId, title);
+    }
+  };
+  const workers = Math.min(POETRY_AUTHOR_CONCURRENCY, uniqueIds.length);
+  await Promise.all(Array.from({ length: workers }, worker));
+  return titles;
+}
+
+// Author lookups are rate limited: space request starts and retry 429/5xx
+// responses so ~100 unique authors resolve instead of silently disappearing.
+async function fetchAuthorTitle(pageId, env, pace) {
+  for (let attempt = 1; attempt <= POETRY_AUTHOR_MAX_ATTEMPTS; attempt += 1) {
+    await pace();
+    let response;
+    try {
+      response = await fetch(`${NOTION_API}/pages/${pageId}`, {
+        headers: {
+          Authorization: `Bearer ${env.NOTION_TOKEN}`,
+          'Notion-Version': env.NOTION_VERSION || '2022-06-28',
+        },
+      });
+    } catch (error) {
+      if (attempt === POETRY_AUTHOR_MAX_ATTEMPTS) return null;
+      await sleep(300 * attempt);
+      continue;
+    }
+    if (response.ok) {
+      const page = await response.json().catch(() => null);
+      return pageTitleText(page);
+    }
+    const retryable = response.status === 429 || response.status === 529 || response.status >= 500;
+    if (!retryable || attempt === POETRY_AUTHOR_MAX_ATTEMPTS) return null;
+    await sleep(retryAfterMs(response.headers.get('Retry-After'), attempt));
+  }
+  return null;
+}
+
+function retryAfterMs(header, attempt) {
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(seconds * 1000, POETRY_AUTHOR_MAX_RETRY_WAIT_MS);
+  }
+  return 350 * attempt;
+}
+
+// Serialises slot allocation so concurrent workers still respect a minimum
+// interval between request starts.
+function createPacer(minIntervalMs) {
+  let nextSlot = 0;
+  let lock = Promise.resolve();
+  return () => {
+    const turn = lock.then(() => {
+      const start = Math.max(Date.now(), nextSlot);
+      nextSlot = start + minIntervalMs;
+      return Math.max(0, start - Date.now());
+    });
+    lock = turn.then(() => undefined, () => undefined);
+    return turn.then((delay) => sleep(delay));
+  };
+}
+
+function sleep(ms) {
+  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+}
+
+function mapPoem(page, authorNames) {
+  const properties = page.properties || {};
+  return {
+    id: page.id,
+    title: titleText(properties['标题']),
+    body: richText(properties['原文']),
+    stage: labelValue(properties['学段']),
+    grade: labelValue(properties['年级']),
+    section: labelValue(properties['板块']),
+    status: labelValue(properties['背诵状态']),
+    week: textValue(properties['计划周次']),
+    dynasty: labelValue(properties['朝代']),
+    type: multiLabels(properties['类型']),
+    link: httpUrl(urlValue(properties['链接'])),
+    audio: (properties['音频']?.files || []).map(mapPoemAudio).filter(Boolean),
+    authors: relationIds(page, '作者').map((id) => authorNames.get(id)).filter(Boolean),
+    order: numberValue(properties['序号']),
+  };
+}
+
+function mapPoemAudio(file) {
+  const url = httpUrl(file?.type === 'external' ? file.external?.url : file?.file?.url);
+  if (!url) return null;
+  return { name: file.name || '朗读音频', url };
+}
+
+function summarizePoetry(poems) {
+  const byStatus = new Map();
+  const byStage = new Map();
+  const masteredStatuses = new Set();
+  let mastered = 0;
+  for (const poem of poems) {
+    if (poem.status) byStatus.set(poem.status, (byStatus.get(poem.status) || 0) + 1);
+    if (POETRY_MASTERED_STATUSES.has(poem.status)) {
+      mastered += 1;
+      masteredStatuses.add(poem.status);
+    }
+    const stage = poem.stage || '';
+    byStage.set(stage, (byStage.get(stage) || 0) + 1);
+  }
+  const toCounts = (map) => [...map].map(([name, count]) => ({ name, count }))
+    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, 'zh-Hans-CN'));
+  return {
+    total: poems.length,
+    mastered,
+    masteredStatuses: [...masteredStatuses],
+    byStatus: toCounts(byStatus),
+    byStage: toCounts(byStage),
+  };
+}
+
+function relationIds(page, propertyName) {
+  return (page.properties?.[propertyName]?.relation || [])
+    .map((relation) => normalizeNotionId(relation?.id))
+    .filter(Boolean);
+}
+
+function titleText(property) {
+  return plainText(property?.title);
+}
+
+function richText(property) {
+  return plainText(property?.rich_text).replaceAll('\r\n', '\n');
+}
+
+function pageTitleText(page) {
+  const titleEntry = Object.values(page?.properties || {}).find((property) => property?.type === 'title');
+  return plainText(titleEntry?.title);
+}
+
+function optionName(property) {
+  return property?.select?.name || property?.status?.name || '';
+}
+
+function multiLabels(property) {
+  const names = (property?.multi_select || []).map((item) => item?.name).filter(Boolean);
+  if (names.length) return names;
+  const single = optionName(property);
+  return single ? [single] : [];
+}
+
+// Tolerant single label: select, status, multi_select or rich_text storage.
+function labelValue(property) {
+  const single = optionName(property);
+  if (single) return single;
+  const multi = multiLabels(property);
+  if (multi.length) return multi.join('、');
+  return richText(property);
+}
+
+// Tolerant free text: rich_text first, then a number, then any label storage.
+function textValue(property) {
+  const text = richText(property);
+  if (text) return text;
+  if (typeof property?.number === 'number' && Number.isFinite(property.number)) return String(property.number);
+  return labelValue(property);
+}
+
+function numberValue(property) {
+  if (typeof property?.number === 'number' && Number.isFinite(property.number)) return property.number;
+  const parsed = Number(plainText(property?.rich_text));
+  return Number.isFinite(parsed) && plainText(property?.rich_text) !== '' ? parsed : null;
+}
+
+function urlValue(property) {
+  return typeof property?.url === 'string' ? property.url : '';
+}
+
+function httpUrl(value) {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : '';
 }
 
 async function getClasses(url, env) {
@@ -821,6 +1088,12 @@ function requireClassesConfig(env) {
   if (!env.NOTION_TOKEN || !env.NOTION_CHILD_PROFILE_DATABASE_ID || !env.NOTION_CHILD_PROFILE_PAGE_ID ||
       !env.NOTION_COURSES_DATABASE_ID || !env.NOTION_CLASS_RECORDS_DATABASE_ID) {
     throw new Error('Classes databases are not configured');
+  }
+}
+
+function requirePoetryConfig(env) {
+  if (!env.NOTION_TOKEN || !env.NOTION_POETRY_DATABASE_ID) {
+    throw new Error('Poetry database is not configured');
   }
 }
 

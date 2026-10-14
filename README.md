@@ -19,6 +19,7 @@ Browser
                  ├─ 孩子资料
                  ├─ 课外课程
                  ├─ 上课记录
+                 ├─ 诗文馆
                  └─ 甜心礼品屋
 ```
 
@@ -114,12 +115,33 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 | `地点` | Rich text | 当次地点 |
 | `媒体` | Files | 最多 5 个课堂图片或视频，应用不限制单文件大小 |
 
+### 诗文馆
+
+只读诗文库，来源为 Notion 数据库 `1b586019-c92c-8364-a021-018c2b927b9a`（通过 `NOTION_POETRY_DATABASE_ID` 配置）。应用不写入该表，也不发放星星。
+
+| 属性 | 类型 | 用途 |
+| --- | --- | --- |
+| `标题` | Title | 诗文名称 |
+| `原文` | Rich text | 原文，页面按原始换行展示 |
+| `学段` | Select | 小学、初中、高中；未标注的行显示为「未标注」 |
+| `年级` | Select | 教材顺序，如 `一年级上册`、`高中选择性必修中册` |
+| `板块` | Select | 所属板块 |
+| `背诵状态` | Select / Status | 包含 `复习中`；`已掌握` 单独计入进度 |
+| `计划周次` | Rich text | 例如 `新学第 3 周`、`复习`、`中学长线` |
+| `朝代` | Select | 朝代 |
+| `类型` | Multi-select | 体裁标签，页面展示全部选项 |
+| `链接` | URL | 仅接受 HTTP(S) 来源链接 |
+| `音频` | Files | 可选朗读音频，仅接受 HTTP(S) URL |
+| `作者` | Relation | 关联作者页，只读取页面标题 |
+| `序号` | Number | 升序展示，缺省值排到最后 |
+
 ## API
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/rewards` | 获取固定任务、星星记录和 Rollup 余额 |
 | `GET` | `/api/gifts` | 获取已启用礼品 |
+| `GET` | `/api/poetry` | 获取全部诗文、统计及筛选所需字段（公开只读，缓存 60 秒） |
 | `GET` | `/api/auth` | 获取当前设备授权状态 |
 | `POST` | `/api/auth/login` | 使用家长 PIN 授权当前设备 30 天 |
 | `POST` | `/api/auth/logout` | 锁定当前设备 |
@@ -151,6 +173,7 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 - `NOTION_CHILD_PROFILE_PAGE_ID`
 - `NOTION_COURSES_DATABASE_ID`
 - `NOTION_CLASS_RECORDS_DATABASE_ID`
+- `NOTION_POETRY_DATABASE_ID`
 - `NOTION_QIQIXUE_TASK_ID`
 - `NOTION_VERSION`
 
@@ -177,6 +200,8 @@ npm run dev
 ```bash
 npm test
 npm run check
+# 可选：真实浏览器回归 /poetry 与 /poetry/（需要本机 Playwright）
+PLAYWRIGHT_PATH=/path/to/playwright/index.mjs npm run check:browser
 ```
 
 ## Deployment
@@ -221,6 +246,11 @@ curl https://child.malinkang.com/api/gifts
 - 兑换前读取最新 Rollup，余额不足时拒绝写入。
 - 兑换媒体最多 5 个，单个文件最大 20 MB，仅支持图片和视频。
 - 媒体上传至 Notion，不存储在浏览器或 Cloudflare。
+- 诗文馆是公开只读页面，不要求设备授权，也不提供背诵或奖励写入。
+- `/api/poetry` 按 `序号` 升序返回全部未归档诗文；缺失字段显示为「未标注」，不会中断整页。
+- 作者关系按唯一作者页解析；请求按约 3 次/秒限速，遇到限流或临时错误会重试，解析失败的作者显示为「作者未标注」。
+- 诗文响应缓存 60 秒并合并并发请求，失败结果不缓存；只有成功响应返回 `Cache-Control: public, max-age=60`。
+- 页面只渲染 HTTP(S) 链接和音频，所有 Notion 文本在渲染前转义。
 
 ## Voice Feedback
 
