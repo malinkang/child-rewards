@@ -1,7 +1,7 @@
 # 作品墙（Artwork Wall）
 
 - Created: 2026-10-14
-- Status: in_progress
+- Status: completed
 
 ## Scope and decisions
 
@@ -98,12 +98,12 @@ Page structure and copy:
 
 ## Stages
 
-- [ ] P0: commit this plan, create the isolated implementation worktree/chat, confirm a real Goal before any business edit.
-- [ ] P1: Worker config, `/api/artworks`, `/api/artwork-media/:pageId/:kind`, route, caching/pacing and `tests/artworks.test.js`.
-- [ ] P2: gallery page, wall/frame/viewer UI, shared-nav entry, `gallery-model.js` tests, browser check script, README and project AGENTS.md updates.
-- [ ] P3: independent review of the actual diff, required syntax/test/browser checks, fixes until acceptance.
-- [ ] P4: integrate and push `main`, deploy the reviewed commit, verify `/api/artworks` (17 rows, media bytes), `/gallery`, `/gallery/` and existing routes live, record the rollback version, clean the task workspace.
-- [ ] P5: final completion-status commit with test and release evidence, pushed.
+- [x] P0: plan committed as `c738b3b`. The user's global AGENTS.md changed mid-task to "implement an approved plan in the current chat", so implementation continued in the original chat at `/Users/malinkang/Documents/child-rewards`; the previously created parked implementation chat/worktree was left untouched.
+- [x] P1: Worker config, `/api/artworks`, `/api/artwork-media/:pageId/:kind`, route, caching/pacing and `tests/artworks.test.js` (`5ac5b76`).
+- [x] P2: gallery page, wall/frame/viewer UI, shared-nav entry, `gallery-model.js` tests, browser check script, README and project AGENTS.md updates (`5ac5b76`).
+- [x] P3: independent review of the actual diff found 2 P2 + 3 P3 items; all fixed with new regression coverage and a genuine nav-button z-index bug surfaced by the added button-click check (`f9f55e1`).
+- [x] P4: integrated and pushed `main` (`c738b3b` → `f9f55e1`), deployed `33fb0c82-547e-4ab4-923c-6ea7fb194476`, verified live API/media/pages/browser and existing routes, recorded rollback version `b63fa64a-02fd-4b65-9923-8f98a49ffe6c`.
+- [x] P5: final completion-status commit with test and release evidence, pushed.
 
 ## Acceptance
 
@@ -111,4 +111,27 @@ Run `node --check src/index.js`, syntax checks for every new/changed public JS f
 
 ## Evidence
 
-(filled during P0–P5)
+### Implementation and review (2026-10-14)
+
+- Commits: `5ac5b76` (`Add public artwork wall for 多乐作品墙`), `f9f55e1` (`Fix artwork wall caching, error handling and viewer input`).
+- Files: `src/index.js` (artwork constants/caches, `GET /api/artworks`, `GET /api/artwork-media/:pageId/(image|audio)`, `/gallery` + `/gallery/` routing, page-body block media resolution with 4-way concurrency / 340 ms pacing / 3 attempts, 30-minute media TTL, `proxyNotionFile` external-file + cache-control support, mp3/m4a/wav/ogg content types), `wrangler.toml`, `public/gallery.html`, `public/gallery.css`, `public/gallery.js`, `public/gallery-model.js`, `public/shared-nav.js`, `tests/artworks.test.js`, `tests/gallery-model.test.js`, `scripts/check-gallery-page.mjs`, `scripts/check-poetry-page.mjs` (four nav links), `package.json`, `README.md`, `AGENTS.md`.
+- Independent review findings, all fixed in `f9f55e1`:
+  - P2 the media route's promise was returned without `await`, so a failing lookup escaped the Worker's error handling as an unhandled rejection (Cloudflare 1101) instead of the generic JSON 500. Now awaited, with a regression test.
+  - P2 a failed page-body block lookup was cached for the full 30 minutes, pinning a stale/missing image on the wall. Property fallback is now retried on the next request and only completed lookups are cached, with a regression test.
+  - P3 media cache-hit semantics were sharper in code than in docs; the invariants now state that page ownership/active state are validated before a page's media is cached and that cache hits stream inside the bounded 30-minute TTL.
+  - P3 a pointer swipe emitted a click on the nearest common ancestor that closed the viewer, and the gesture was dropped when it left the stage. The stage now captures the pointer, ignores pointerdowns on the prev/next buttons, and suppresses the click that follows a swipe; `touch-action:pan-y` keeps the gesture alive.
+  - P3 focus restoration relied on the browser focusing the clicked button (false on iOS Safari). The opening frame button is now passed explicitly and only re-focused when still connected.
+- A new button-click browser assertion exposed a real z-index bug: the circular prev/next buttons painted below the frame and were un-clickable where they overlap it (notably on mobile). They now carry `z-index:2`.
+- Verification: `node --check` on `src/index.js`, every changed `public/*.js`, the new tests and check scripts; `git diff --check`; `npm run check` (Wrangler dry-run, both new env vars bound); `npm test` 68 passed / 0 failed, covering pagination and numeric ordering with null last, malformed rows, archived exclusion, block-preferred vs property fallback, per-page failure isolation with 429 retry, media proxy Range/content-type/no-URL-leak, payload cache coalescing and no-failure caching, failed-media JSON 500, non-cached failed block lookup, `gallery-model` date/label/step/path validation, and `/gallery` + `/gallery/` asset mapping.
+- Browser regressions: `npm run check:browser:gallery` (3 mixed-orientation framed fixtures, viewer open/close, button + arrow navigation with wrap-around, swipe keeps the viewer open, date shown/hidden correctly, focus restored, no console errors or failed requests, no horizontal overflow at 1280 px and 390 px) and the existing `npm run check:browser` (updated for the fourth nav item) both passed.
+
+### Release and live verification (2026-10-14)
+
+- `main` fast-forwarded `c738b3b` → `f9f55e1` and pushed to `origin/main`.
+- Deployed Worker version `33fb0c82-547e-4ab4-923c-6ea7fb194476` (100% rollout). Rollback version: `b63fa64a-02fd-4b65-9923-8f98a49ffe6c`.
+- Live `/api/artworks`: HTTP 200 (≈6.9 s cold, the paced block resolution), 17 non-archived artworks in ascending `序号` 1–17, `stats { count: 17, withDescription: 3, withAudio: 3 }`, 17 image paths and 3 audio paths, all same-origin `/api/artwork-media/...`, no Notion/CDN URL anywhere in the payload.
+- Live media: page `3f986019-c92c-81b7-818a-e6d6d4b0c127` image → HTTP 200 `image/jpeg` 1,743,783 bytes (1000×1224 JPEG); its audio → HTTP 200 `audio/mpeg` 240,048 bytes (MP3); `Range: bytes=0-131071` → HTTP 206, 131,072 bytes.
+- Live pages: `/gallery` HTTP 200 `text/html` with `<title>多乐的作品墙</title>`. `/gallery/` and `/gallery.html` are 307-normalised to `/gallery` by Cloudflare's static-asset HTML handling — the same pre-existing behaviour as `/poetry/` → `/poetry` — and the redirect target loads every asset (`/gallery.js`, `/gallery.css`, `/gallery-model.js`, `/shared-nav.js`, `/fonts/ZCOOLKuaiLe-Regular.ttf`: all 200).
+- Live headless-Chrome pass on production: the wall renders 17 framed artworks with the description-first label (`17 幅作品 · 3 幅有讲述`, current nav 作品墙), the first image decodes at 1000×1224. Clicking the 5th frame opens the viewer at `第 5 / 17 幅` with `多乐作品 05` and `2026年10月14日`; `ArrowRight` → `第 6 / 17 幅`; three `ArrowLeft` → `第 3 / 17 幅`; `Escape` closes the viewer, releases the scroll lock and restores focus to the opening frame. The only console entry is the pre-existing site-wide `/favicon.ico` 404 (no favicon asset exists in this repository).
+- Existing routes unchanged: `/api/rewards`, `/api/gifts`, `/api/poetry`, `/classes`, `/`, `/poetry.css` all HTTP 200. No Notion writes were performed for any of this work, and no human-assisted Notion access step was needed — the production integration can already read 多乐作品墙.
+- Task workspace: the implementation used the main checkout; the pre-workflow-change parked chat/worktree was not modified.
