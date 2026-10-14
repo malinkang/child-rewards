@@ -8,6 +8,7 @@ let viewerIndex = -1;
 let lastFocused = null;
 let pinRequest = null;
 let swipeStart = null;
+let swipeConsumed = false;
 
 function mountNav() {
   mountSharedNav({
@@ -63,7 +64,7 @@ function renderWall() {
     : `${artworks.length} 幅作品`;
   wall.innerHTML = artworks.map((artwork, index) => wallItem(artwork, index)).join('');
   wall.querySelectorAll('.wall-frame').forEach((button) => {
-    button.addEventListener('click', () => openViewer(Number(button.dataset.index)));
+    button.addEventListener('click', () => openViewer(Number(button.dataset.index), button));
   });
 }
 
@@ -85,10 +86,11 @@ function wallItem(artwork, index) {
     </figure>`;
 }
 
-function openViewer(index) {
+function openViewer(index, opener) {
   if (!Number.isInteger(index) || index < 0 || index >= artworks.length) return;
   viewerIndex = index;
-  lastFocused = document.activeElement;
+  // Safari/iOS does not focus a button on tap, so remember the frame itself.
+  lastFocused = opener || document.activeElement;
   renderViewer();
   const dialog = document.getElementById('artworkViewer');
   if (!dialog.open) dialog.showModal();
@@ -101,7 +103,7 @@ function closeViewer() {
   const dialog = document.getElementById('artworkViewer');
   if (dialog.open) dialog.close();
   document.body.classList.remove('viewer-open');
-  if (lastFocused && typeof lastFocused.focus === 'function') lastFocused.focus();
+  if (lastFocused?.isConnected && typeof lastFocused.focus === 'function') lastFocused.focus();
   lastFocused = null;
 }
 
@@ -172,12 +174,19 @@ function setupEvents() {
 
   const dialog = document.getElementById('artworkViewer');
   dialog.addEventListener('cancel', (event) => { event.preventDefault(); closeViewer(); });
+  // Capture phase: a swipe that ends on a different element still emits a click
+  // on the nearest common ancestor, which must not close the viewer.
   dialog.addEventListener('click', (event) => {
+    if (swipeConsumed) {
+      swipeConsumed = false;
+      event.stopPropagation();
+      return;
+    }
     const target = event.target;
     if (target === dialog || target.classList?.contains('viewer-shell') || target.classList?.contains('viewer-stage')) {
       closeViewer();
     }
-  });
+  }, true);
   dialog.addEventListener('keydown', (event) => {
     if (event.key === 'ArrowLeft') { event.preventDefault(); moveViewer(-1); }
     if (event.key === 'ArrowRight') { event.preventDefault(); moveViewer(1); }
@@ -189,7 +198,15 @@ function setupEvents() {
   document.getElementById('viewerAudioElement').addEventListener('ended', resetAudioButton);
 
   const stage = document.querySelector('.viewer-stage');
-  stage.addEventListener('pointerdown', (event) => { swipeStart = { x: event.clientX, y: event.clientY }; });
+  stage.addEventListener('pointerdown', (event) => {
+    // Never hijack the prev/next buttons: they must keep plain click behaviour.
+    if (event.target.closest?.('button')) return;
+    swipeStart = { x: event.clientX, y: event.clientY };
+    swipeConsumed = false;
+    // Capture the pointer so the gesture also completes over the shell or the
+    // nav buttons instead of being dropped when it leaves the stage.
+    try { stage.setPointerCapture(event.pointerId); } catch { /* not always supported */ }
+  });
   stage.addEventListener('pointercancel', () => { swipeStart = null; });
   stage.addEventListener('pointerup', (event) => {
     if (!swipeStart) return;
@@ -197,6 +214,9 @@ function setupEvents() {
     const dy = event.clientY - swipeStart.y;
     swipeStart = null;
     if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy)) return;
+    swipeConsumed = true;
+    // Touch gestures do not always produce a click; never swallow the next tap.
+    setTimeout(() => { swipeConsumed = false; }, 400);
     moveViewer(dx < 0 ? 1 : -1);
   });
 }

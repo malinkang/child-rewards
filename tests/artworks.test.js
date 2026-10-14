@@ -370,6 +370,59 @@ test('isolates a failing block lookup to one artwork and retries rate limits', a
   for (const artwork of data.artworks) assert.equal(typeof artwork.image, 'string');
 });
 
+test('turns a failing media lookup into the generic JSON 500', async (t) => {
+  const MISS_DB = 'artworks-db-miss';
+  const pageId = 'b'.repeat(32);
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    const parsed = new URL(url);
+    if (parsed.pathname === `/v1/pages/${pageId}`) return new Response('missing', { status: 404 });
+    throw new Error('unexpected fetch ' + url);
+  });
+  const response = await worker.fetch(mediaRequest(pageId, 'image'), envFor(MISS_DB));
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), { error: '服务暂时不可用，请稍后再试' });
+});
+
+test('retries a failed block lookup instead of caching the fallback', async (t) => {
+  const RETRY_DB = 'artworks-db-media-retry';
+  const pageId = 'c'.repeat(32);
+  const fallback = 'https://cdn.example.test/fallback.png';
+  const recovered = 'https://cdn.example.test/recovered.png';
+  let blockCalls = 0;
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    const parsed = new URL(url);
+    if (parsed.pathname === `/v1/pages/${pageId}`) {
+      return Response.json(artworkPage(pageId, {
+        title: '暂时失败',
+        parentDatabaseId: RETRY_DB,
+        image: fileProperty(fallback, 'fallback.png'),
+      }));
+    }
+    if (parsed.pathname === `/v1/blocks/${pageId}/children`) {
+      blockCalls += 1;
+      if (blockCalls <= 3) return new Response('broken', { status: 500 });
+      return Response.json({ results: [imageBlock(recovered)], has_more: false });
+    }
+    if (url === fallback) return new Response('FALLBACK', { status: 200, headers: { 'Content-Type': 'image/png' } });
+    if (url === recovered) return new Response('RECOVERED', { status: 200, headers: { 'Content-Type': 'image/png' } });
+    throw new Error('unexpected fetch ' + url);
+  });
+  const env = envFor(RETRY_DB);
+  const first = await worker.fetch(mediaRequest(pageId, 'image'), env);
+  assert.equal(first.status, 200);
+  assert.equal(await first.text(), 'FALLBACK');
+  assert.equal(blockCalls, 3);
+  // A failed block lookup must not be cached: the next request resolves again.
+  const second = await worker.fetch(mediaRequest(pageId, 'image'), env);
+  assert.equal(second.status, 200);
+  assert.equal(await second.text(), 'RECOVERED');
+  assert.equal(blockCalls, 4);
+  // A completed lookup is cached and reused.
+  const third = await worker.fetch(mediaRequest(pageId, 'image'), env);
+  assert.equal(await third.text(), 'RECOVERED');
+  assert.equal(blockCalls, 4);
+});
+
 test('requires configuration, prefers a dedicated token and serves the gallery assets', async (t) => {
   const unconfigured = await worker.fetch(listRequest(), { NOTION_TOKEN: 'token' });
   assert.equal(unconfigured.status, 500);

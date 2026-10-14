@@ -165,8 +165,8 @@ Database and singleton balance-page IDs are configured through `wrangler.toml`. 
 - Only HTTP(S) source links and audio URLs reach the browser; all Notion text is escaped before rendering.
 - The artwork wall at `/gallery` and `/gallery/` is public and read-only: no device cookie, no writes, and no stars.
 - `/api/artworks` sorts by ascending numeric `序号` (missing/invalid last, tie-break title then id), tolerates malformed rows, and returns only title, description, order, date, and same-origin media paths.
-- Artwork media resolution prefers the first page-body `image`/`audio` file block and falls back to the `图片`/`音频` files property. One failing page must never fail the whole wall.
-- Artwork media streams only through `/api/artwork-media/:pageId/(image|audio)`, after validating the page belongs to the artworks database and is active. Never return Notion or signed URLs to the browser or logs; preserve `Range` for audio seeking.
+- Artwork media resolution prefers the first page-body `image`/`audio` file block and falls back to the `图片`/`音频` files property. One failing page must never fail the whole wall, and a failed block lookup is never cached.
+- Artwork media streams only through `/api/artwork-media/:pageId/(image|audio)`. Validate that the page belongs to the artworks database and is active before its media is cached; a cache hit then streams within the bounded 30-minute TTL. Never return Notion or signed URLs to the browser or logs; preserve `Range` for audio seeking.
 - Artwork payloads use a bounded 60-second cache with in-flight coalescing; media source URLs are cached 30 minutes (below signed-URL expiry) and dropped after a failed fetch. Successful media responses return `Cache-Control: public, max-age=300, s-maxage=3600`.
 
 ## API Surface

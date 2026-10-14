@@ -205,6 +205,11 @@ async function inspectPage(browser, port, pathname) {
   assert(first.image === `/api/artwork-media/${ARTWORK_IDS[0]}/image`, `${pathname}: unexpected viewer image ${first.image}`);
   assert(first.bodyLocked, `${pathname}: viewer did not lock body scroll`);
 
+  await page.click('#viewerNext');
+  await page.waitForFunction(() => document.getElementById('viewerMeta').textContent === '第 2 / 3 幅');
+  await page.click('#viewerPrev');
+  await page.waitForFunction(() => document.getElementById('viewerMeta').textContent === '第 1 / 3 幅');
+
   await page.keyboard.press('ArrowRight');
   await page.waitForFunction(() => document.getElementById('viewerMeta').textContent === '第 2 / 3 幅');
   const second = await page.evaluate(() => ({
@@ -234,6 +239,15 @@ async function inspectPage(browser, port, pathname) {
   await page.keyboard.press('ArrowLeft');
   await page.waitForFunction(() => document.getElementById('viewerMeta').textContent === '第 3 / 3 幅');
   assert(await page.evaluate(() => document.getElementById('viewerTitle').textContent) === '未命名作品', `${pathname}: ArrowLeft did not wrap backwards`);
+
+  // A pointer swipe advances the viewer and must not dismiss it afterwards.
+  const frameBox = await page.locator('.viewer-frame').boundingBox();
+  await page.mouse.move(frameBox.x + frameBox.width / 2, frameBox.y + frameBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(frameBox.x - 60, frameBox.y + frameBox.height / 2, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForFunction(() => document.getElementById('viewerMeta').textContent === '第 1 / 3 幅');
+  assert(await page.evaluate(() => document.getElementById('artworkViewer').open), `${pathname}: a swipe closed the viewer`);
 
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => document.getElementById('artworkViewer')?.open === false, null, { timeout: 5000 });

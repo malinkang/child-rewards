@@ -62,7 +62,9 @@ export default {
       }
       const artworkMediaMatch = url.pathname.match(/^\/api\/artwork-media\/([0-9a-f-]{32,36})\/(image|audio)$/i);
       if (artworkMediaMatch && request.method === 'GET') {
-        return getArtworkMedia(request, env, artworkMediaMatch[1], artworkMediaMatch[2]);
+        // Await inside the try so a failing lookup becomes the generic 500
+        // response instead of an unhandled rejection from the Worker runtime.
+        return await getArtworkMedia(request, env, artworkMediaMatch[1], artworkMediaMatch[2]);
       }
       if (url.pathname === '/api/classes' && request.method === 'GET') {
         return requireAuthorized(request, env, () => getClasses(url, env));
@@ -579,7 +581,10 @@ async function resolveArtworkMediaForPage(page, env, pace) {
     image: blockFiles?.image || artworkPropertyFile(page, '图片', 'image'),
     audio: blockFiles?.audio || artworkPropertyFile(page, '音频', 'audio'),
   };
-  writeArtworkMediaCache(env, page.id, files);
+  // Only a completed block lookup is cacheable. A failed lookup keeps its
+  // property fallback for this request but must be retried on the next one,
+  // otherwise one transient Notion error would hide the artwork for 30 minutes.
+  if (blockFiles) writeArtworkMediaCache(env, page.id, files);
   return files;
 }
 
