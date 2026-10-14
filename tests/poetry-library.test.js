@@ -11,6 +11,7 @@ import {
   filterPoems,
   labelOf,
   normalizeGradeSelection,
+  renderPoemContentHtml,
   safeHttpUrl,
 } from '../public/poetry-library.js';
 
@@ -174,4 +175,28 @@ test('computes overall and scoped learning progress with stage breakdown', () =>
   assert.equal(empty.mastered, 0);
   assert.equal(empty.percent, 0);
   assert.deepEqual(empty.stages, []);
+});
+
+test('renderPoemContentHtml renders poem body, translation and appreciation subcards safely', () => {
+  // Empty or null
+  assert.equal(renderPoemContentHtml(null), '');
+  assert.equal(renderPoemContentHtml({}), '<p class="poem-body">（暂无原文）</p>');
+
+  // Full content with HTML escaping
+  const html = renderPoemContentHtml({
+    text: '鹅，鹅，鹅，\n曲项向天歌。 <script>',
+    translation: '译文：一群鹅儿 & 注释 "曲项"',
+    appreciation: '这是骆宾王小时候的诗作 <test>',
+  });
+  assert(html.includes('<p class="poem-body">鹅，鹅，鹅，\n曲项向天歌。 &lt;script&gt;</p>'));
+  assert(html.includes('📖 译文与注释'));
+  assert(html.includes('译文：一群鹅儿 &amp; 注释 &quot;曲项&quot;'));
+  assert(html.includes('✨ 诗文赏析'));
+  assert(html.includes('这是骆宾王小时候的诗作 &lt;test&gt;'));
+  assert(!html.includes('<script>'));
+
+  // Only text without translation or appreciation
+  const simple = renderPoemContentHtml({ text: '床前明月光' });
+  assert.equal(simple, '<p class="poem-body">床前明月光</p>');
+  assert(!simple.includes('poem-subcard'));
 });

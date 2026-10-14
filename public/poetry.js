@@ -9,6 +9,7 @@ import {
   filterPoems,
   labelOf,
   normalizeGradeSelection,
+  renderPoemContentHtml,
   safeHttpUrl,
 } from './poetry-library.js';
 
@@ -21,6 +22,7 @@ let statusFilter = '';
 let query = '';
 let pinRequest = null;
 let searchDebounce = 0;
+const poemContentFetches = new Map();
 
 function mountNav() {
   mountSharedNav({
@@ -178,6 +180,8 @@ function renderResults() {
   results.innerHTML = visible.length
     ? `<ul class="poem-list">${visible.map(renderPoem).join('')}</ul>`
     : '<div class="empty-card">没有找到符合条件的诗文，试试调整筛选或搜索词。</div>';
+
+  attachCardListeners();
 }
 
 function renderPoem(poem) {
@@ -190,8 +194,9 @@ function renderPoem(poem) {
   const week = typeof poem.week === 'string' ? poem.week.trim() : poem.week == null ? '' : String(poem.week);
   const link = safeHttpUrl(poem.link);
   const audio = (poem.audio || []).map((clip) => safeHttpUrl(clip?.url)).filter(Boolean);
+  const hasContent = Boolean(poem.body);
   return `<li class="poem-item">
-    <details class="poem-card">
+    <details class="poem-card" data-poem-id="${escapeHtml(poem.id)}">
       <summary>
         <span class="poem-summary-main"><span class="poem-title">${escapeHtml(poem.title || '未命名诗文')}</span><span class="poem-subtitle">${authors}${poem.dynasty ? ` · ${escapeHtml(poem.dynasty)}` : ''}</span></span>
         <span class="poem-chips"><span class="poem-chip is-stage">${stage}</span><span class="poem-chip">${grade}</span><span class="poem-chip is-status">${status}</span></span>
@@ -199,7 +204,9 @@ function renderPoem(poem) {
       </summary>
       <div class="poem-detail">
         ${meta ? `<div class="poem-tags">${meta}</div>` : ''}
-        <p class="poem-body">${escapeHtml(poem.body || '（暂无原文）')}</p>
+        <div class="poem-body-container" data-content-id="${escapeHtml(poem.id)}">
+          ${hasContent ? renderPoemContentHtml(poem) : '<p class="poem-body poem-body-loading"><span class="poem-loading-sparkle" aria-hidden="true">🌸</span> 点击展开查看原文与译文…</p>'}
+        </div>
         <dl class="poem-meta">
           <div><dt>作者</dt><dd>${authors}</dd></div>
           <div><dt>朝代</dt><dd>${escapeHtml(poem.dynasty || '—')}</dd></div>
@@ -212,6 +219,67 @@ function renderPoem(poem) {
       </div>
     </details>
   </li>`;
+}
+
+function attachCardListeners() {
+  document.querySelectorAll('.poem-card').forEach((card) => {
+    card.addEventListener('toggle', () => {
+      if (card.open) {
+        const poemId = card.getAttribute('data-poem-id');
+        ensurePoemContent(poemId, card);
+      }
+    });
+  });
+}
+
+async function ensurePoemContent(poemId, card) {
+  if (!poemId) return;
+  const poem = poems.find((p) => p.id === poemId);
+  if (!poem) return;
+  if (poem.body) return;
+
+  const container = card ? card.querySelector('.poem-body-container') : document.querySelector(`.poem-body-container[data-content-id="${CSS.escape(poemId)}"]`);
+  if (container) {
+    container.innerHTML = '<div class="poem-body-loading"><span class="poem-loading-sparkle" aria-hidden="true">🌸</span> 正在载入诗文与译文…</div>';
+  }
+
+  try {
+    let promise = poemContentFetches.get(poemId);
+    if (!promise) {
+      promise = fetch(`/api/poetry/${encodeURIComponent(poemId)}/content`).then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      }).finally(() => {
+        poemContentFetches.delete(poemId);
+      });
+      poemContentFetches.set(poemId, promise);
+    }
+    const data = await promise;
+    poem.body = data.text || '';
+    poem.translation = data.translation || '';
+    poem.appreciation = data.appreciation || '';
+
+    const activeContainer = card ? card.querySelector('.poem-body-container') : document.querySelector(`.poem-body-container[data-content-id="${CSS.escape(poemId)}"]`);
+    if (activeContainer) {
+      activeContainer.innerHTML = renderPoemContentHtml(poem);
+    }
+  } catch {
+    const errorContainer = card ? card.querySelector('.poem-body-container') : document.querySelector(`.poem-body-container[data-content-id="${CSS.escape(poemId)}"]`);
+    if (errorContainer) {
+      errorContainer.innerHTML = `
+        <div class="poem-body-error">
+          <span>诗文载入失败，请稍后重试</span>
+          <button type="button" class="poem-retry-btn" data-retry-id="${escapeHtml(poemId)}">重试</button>
+        </div>`;
+      const retryBtn = errorContainer.querySelector('.poem-retry-btn');
+      if (retryBtn) {
+        retryBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          ensurePoemContent(poemId, card);
+        });
+      }
+    }
+  }
 }
 
 function resetFilters() {

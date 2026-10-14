@@ -174,6 +174,7 @@ Database and singleton balance-page IDs are configured through `wrangler.toml`. 
 - `GET /api/rewards`: permanent task templates plus the complete active ledger and Rollup balance.
 - `GET /api/gifts`: enabled gifts ordered by `排序` and creation time.
 - `GET /api/poetry`: public read-only poetry library: poems ordered by `序号` plus observed totals and filter values.
+ - `GET /api/poetry/:recordId/content`: on-demand read-only poem content (original text `text`, `translation`, and `appreciation`) parsed from Notion page tab blocks, with 24-hour cache and coalesced requests.
 - `GET /api/artworks`: public read-only artwork wall: artworks ordered by `序号` with description, Beijing-time date, and same-origin media paths.
 - `GET /api/artwork-media/:pageId/(image|audio)`: public proxy for artwork media after validating page/database ownership; never exposes the source URL.
 - `GET /api/auth`: returns whether the current device has a valid signed authorization cookie.

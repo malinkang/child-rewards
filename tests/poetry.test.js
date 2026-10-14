@@ -351,3 +351,105 @@ test('serves the poetry page asset for /poetry and /poetry/', async () => {
   }
   assert.deepEqual(requested, ['/poetry.html', '/poetry.html']);
 });
+
+test('GET /api/poetry/:recordId/content parses tabs and returns poem text, translation, appreciation', async (t) => {
+  const POEM_ID = '3f986019-c92c-814e-b2e3-c6d652b1f91a';
+  const TAB_BLOCK_ID = 'tab-block-1';
+  const TAB_ORIGIN_ID = 'tab-origin-1';
+  const TAB_TRANS_ID = 'tab-trans-1';
+  const TAB_APPR_ID = 'tab-appr-1';
+
+  let blockCalls = 0;
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    blockCalls += 1;
+    if (url.includes(`/blocks/${POEM_ID}/children`)) {
+      return Response.json({
+        results: [
+          { id: 'audio-1', type: 'audio', has_children: false },
+          { id: TAB_BLOCK_ID, type: 'tab', has_children: true },
+        ],
+        has_more: false,
+      });
+    }
+    if (url.includes(`/blocks/${TAB_BLOCK_ID}/children`)) {
+      return Response.json({
+        results: [
+          { id: TAB_ORIGIN_ID, type: 'paragraph', has_children: true, paragraph: { rich_text: [{ plain_text: '原文' }] } },
+          { id: TAB_TRANS_ID, type: 'paragraph', has_children: true, paragraph: { rich_text: [{ plain_text: '译文' }] } },
+          { id: TAB_APPR_ID, type: 'paragraph', has_children: true, paragraph: { rich_text: [{ plain_text: '赏析' }] } },
+        ],
+        has_more: false,
+      });
+    }
+    if (url.includes(`/blocks/${TAB_ORIGIN_ID}/children`)) {
+      return Response.json({
+        results: [
+          { id: 'p1', type: 'paragraph', paragraph: { rich_text: [{ plain_text: '鹅，鹅，鹅，曲项向天歌。' }] } },
+          { id: 'p2', type: 'paragraph', paragraph: { rich_text: [{ plain_text: '白毛浮绿水，红掌拨清波。' }] } },
+        ],
+        has_more: false,
+      });
+    }
+    if (url.includes(`/blocks/${TAB_TRANS_ID}/children`)) {
+      return Response.json({
+        results: [
+          { id: 't1', type: 'paragraph', paragraph: { rich_text: [{ plain_text: '一群白鹅在水中畅游。' }] } },
+        ],
+        has_more: false,
+      });
+    }
+    if (url.includes(`/blocks/${TAB_APPR_ID}/children`)) {
+      return Response.json({
+        results: [
+          { id: 'a1', type: 'paragraph', paragraph: { rich_text: [{ plain_text: '骆宾王七岁时所作。' }] } },
+        ],
+        has_more: false,
+      });
+    }
+    throw new Error('unexpected fetch ' + url);
+  });
+
+  const env = envFor(DB_A);
+  const req = new Request(`https://example.test/api/poetry/${POEM_ID}/content`, { method: 'GET' });
+  const response = await worker.fetch(req, env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Content-Type'), 'application/json; charset=utf-8');
+  assert(response.headers.get('Cache-Control').includes('public'));
+
+  const data = await response.json();
+  assert.equal(data.id, POEM_ID);
+  assert.equal(data.text, '鹅，鹅，鹅，曲项向天歌。\n白毛浮绿水，红掌拨清波。');
+  assert.equal(data.translation, '一群白鹅在水中畅游。');
+  assert.equal(data.appreciation, '骆宾王七岁时所作。');
+
+  // Second call hits cache (blockCalls should not increase)
+  const initialCalls = blockCalls;
+  const cachedResponse = await worker.fetch(req, env);
+  assert.equal(cachedResponse.status, 200);
+  const cachedData = await cachedResponse.json();
+  assert.equal(cachedData.text, data.text);
+  assert.equal(blockCalls, initialCalls);
+});
+
+test('GET /api/poetry/:recordId/content validates inputs and handles 400/404/method errors', async (t) => {
+  const env = envFor(DB_A);
+
+  // Invalid record ID format (not 32 hex chars)
+  const badIdRes = await worker.fetch(new Request('https://example.test/api/poetry/invalid-id/content', { method: 'GET' }), env);
+  assert.equal(badIdRes.status, 400);
+
+  // Non-GET method (POST) returns 404
+  const postRes = await worker.fetch(new Request('https://example.test/api/poetry/3f986019-c92c-814e-b2e3-c6d652b1f91a/content', { method: 'POST' }), env);
+  assert.equal(postRes.status, 404);
+
+  // Missing Notion page returns 404
+  const MISSING_ID = '00000000-0000-0000-0000-000000000000';
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (url.includes(`/blocks/${MISSING_ID}/children`)) {
+      return new Response(JSON.stringify({ object: 'error', status: 404 }), { status: 404 });
+    }
+    throw new Error('unexpected fetch ' + url);
+  });
+  const notFoundRes = await worker.fetch(new Request(`https://example.test/api/poetry/${MISSING_ID}/content`, { method: 'GET' }), env);
+  assert.equal(notFoundRes.status, 404);
+});

@@ -36,6 +36,14 @@ const poetryInFlight = new Map();
 const artworkCache = new Map();
 const artworkInFlight = new Map();
 const artworkMediaCache = new Map();
+const POETRY_CONTENT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const POETRY_CONTENT_CACHE_MAX_ENTRIES = 500;
+const POETRY_CONTENT_HEADERS = {
+  'Content-Type': 'application/json; charset=utf-8',
+  'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400',
+};
+const poetryContentCache = new Map();
+const poetryContentInFlight = new Map();
 
 export default {
   async fetch(request, env) {
@@ -55,6 +63,10 @@ export default {
         // Await inside the try so Notion/cache failures become the generic 500
         // response instead of an unhandled rejection from the Worker runtime.
         return await getPoetry(env);
+      }
+      const poemContentMatch = url.pathname.match(/^\/api\/poetry\/([^/]+)\/content$/i);
+      if (poemContentMatch && request.method === 'GET') {
+        return await getPoemContent(poemContentMatch[1], env);
       }
       if (url.pathname === '/api/artworks' && request.method === 'GET') {
         // Same failure handling as poetry: bad upstream reads become a 500.
@@ -260,6 +272,149 @@ function trimPoetryCache() {
   while (poetryCache.size > POETRY_CACHE_MAX_ENTRIES) {
     poetryCache.delete(poetryCache.keys().next().value);
   }
+}
+
+function trimPoetryContentCache() {
+  while (poetryContentCache.size > POETRY_CONTENT_CACHE_MAX_ENTRIES) {
+    poetryContentCache.delete(poetryContentCache.keys().next().value);
+  }
+}
+
+async function getPoemContent(recordId, env) {
+  requirePoetryConfig(env);
+  const normalizedId = normalizeNotionId(recordId);
+  if (!normalizedId || normalizedId.length !== 32 || !/^[0-9a-f]{32}$/i.test(normalizedId)) {
+    return Response.json({ error: '无效的诗文编号' }, { status: 400, headers: NO_STORE_HEADERS });
+  }
+  const key = `${normalizedId}:${env.NOTION_VERSION || '2022-06-28'}`;
+  const cached = poetryContentCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return Response.json(cached.payload, { headers: POETRY_CONTENT_HEADERS });
+  }
+  if (cached) poetryContentCache.delete(key);
+  let promise = poetryContentInFlight.get(key);
+  if (!promise) {
+    promise = loadPoemContent(recordId, env)
+      .then((payload) => {
+        if (payload) {
+          poetryContentCache.set(key, { expiresAt: Date.now() + POETRY_CONTENT_CACHE_TTL_MS, payload });
+          trimPoetryContentCache();
+          const listKey = poetryCacheKey(env);
+          const cachedList = poetryCache.get(listKey);
+          if (cachedList && Array.isArray(cachedList.payload?.poems)) {
+            const poem = cachedList.payload.poems.find((p) => normalizeNotionId(p.id) === normalizedId);
+            if (poem) {
+              poem.body = payload.text;
+            }
+          }
+        }
+        return payload;
+      })
+      .finally(() => {
+        if (poetryContentInFlight.get(key) === promise) poetryContentInFlight.delete(key);
+      });
+    poetryContentInFlight.set(key, promise);
+  }
+
+  const payload = await promise;
+  if (!payload) {
+    return Response.json({ error: '未找到该诗文内容' }, { status: 404, headers: NO_STORE_HEADERS });
+  }
+  return Response.json(payload, { headers: POETRY_CONTENT_HEADERS });
+}
+
+function extractBlockText(block) {
+  if (!block || !block.type) return '';
+  const content = block[block.type];
+  if (!content) return '';
+  if (Array.isArray(content.rich_text)) {
+    return content.rich_text.map((t) => t.plain_text || '').join('');
+  }
+  return '';
+}
+
+async function fetchAllBlockChildren(blockId, token, version) {
+  const results = [];
+  let cursor;
+  while (true) {
+    const url = new URL(`${NOTION_API}/blocks/${blockId}/children`);
+    url.searchParams.set('page_size', '100');
+    if (cursor) url.searchParams.set('start_cursor', cursor);
+
+    let response;
+    for (let attempt = 1; attempt <= POETRY_AUTHOR_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        response = await fetch(url.toString(), {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Notion-Version': version,
+          },
+        });
+      } catch (err) {
+        if (attempt === POETRY_AUTHOR_MAX_ATTEMPTS) throw err;
+        await sleep(300 * attempt);
+        continue;
+      }
+      if (response.ok) break;
+      if (response.status === 404) return null;
+      const retryable = response.status === 429 || response.status === 529 || response.status >= 500;
+      if (!retryable || attempt === POETRY_AUTHOR_MAX_ATTEMPTS) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`Notion blocks error ${response.status}: ${errorText}`);
+      }
+      await sleep(retryAfterMs(response.headers.get('Retry-After'), attempt));
+    }
+
+    const data = await response.json();
+    results.push(...(data.results || []));
+    if (!data.has_more || !data.next_cursor) break;
+    cursor = data.next_cursor;
+  }
+  return results;
+}
+
+async function loadPoemContent(recordId, env) {
+  const token = poetryNotionToken(env);
+  const version = env.NOTION_VERSION || '2022-06-28';
+  const topBlocks = await fetchAllBlockChildren(recordId, token, version);
+  if (!topBlocks) return null;
+
+  const tabBlock = topBlocks.find((block) => block.type === 'tab');
+  let text = '';
+  let translation = '';
+  let appreciation = '';
+
+  if (tabBlock) {
+    const tabs = await fetchAllBlockChildren(tabBlock.id, token, version);
+    for (const tab of (tabs || [])) {
+      const name = extractBlockText(tab).trim();
+      if (!tab.has_children) continue;
+      const children = await fetchAllBlockChildren(tab.id, token, version);
+      const lines = (children || []).map(extractBlockText).filter(Boolean);
+      const content = lines.join('\n');
+      if (name.includes('原文') || name.includes('正文') || name.includes('诗文')) {
+        text = content;
+      } else if (name.includes('译文') || name.includes('注释') || name.includes('翻译')) {
+        translation = content;
+      } else if (name.includes('赏析') || name.includes('鉴赏') || name.includes('背景')) {
+        appreciation = content;
+      }
+    }
+    if (!text && tabs && tabs.length > 0 && tabs[0].has_children) {
+      const firstChildren = await fetchAllBlockChildren(tabs[0].id, token, version);
+      text = (firstChildren || []).map(extractBlockText).filter(Boolean).join('\n');
+    }
+  } else {
+    const lines = topBlocks.map(extractBlockText).filter(Boolean);
+    text = lines.join('\n');
+  }
+
+  return {
+    id: recordId,
+    text: text || '',
+    translation: translation || '',
+    appreciation: appreciation || '',
+  };
 }
 
 async function loadPoetry(env) {

@@ -149,3 +149,27 @@ export function safeHttpUrl(value) {
   const trimmed = value.trim();
   return /^https?:\/\//i.test(trimmed) ? trimmed : '';
 }
+
+export function renderPoemContentHtml(content, { escape = escapeHtml } = {}) {
+  if (!content) return '';
+  const text = (content.text || content.body || '').trim();
+  const translation = (content.translation || '').trim();
+  const appreciation = (content.appreciation || '').trim();
+
+  let html = `<p class="poem-body">${escape(text || '（暂无原文）')}</p>`;
+  if (translation) {
+    html += `
+      <details class="poem-subcard">
+        <summary class="poem-subcard-summary"><span>📖 译文与注释</span><span class="subcard-toggle" aria-hidden="true">▾</span></summary>
+        <div class="poem-subcard-content">${escape(translation)}</div>
+      </details>`;
+  }
+  if (appreciation) {
+    html += `
+      <details class="poem-subcard">
+        <summary class="poem-subcard-summary"><span>✨ 诗文赏析</span><span class="subcard-toggle" aria-hidden="true">▾</span></summary>
+        <div class="poem-subcard-content">${escape(appreciation)}</div>
+      </details>`;
+  }
+  return html;
+}

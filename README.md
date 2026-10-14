@@ -160,6 +160,7 @@ Notion 属性名是代码契约，重命名后必须同步修改 `src/index.js`�
 | `GET` | `/api/rewards` | 获取固定任务、星星记录和 Rollup 余额 |
 | `GET` | `/api/gifts` | 获取已启用礼品 |
 | `GET` | `/api/poetry` | 获取全部诗文、统计及筛选所需字段（公开只读，缓存 60 秒） |
+| `GET` | `/api/poetry/:recordId/content` | 按需获取单首诗文的原文、译文与赏析（展开卡片时按需请求，公开缓存） |
 | `GET` | `/api/artworks` | 获取全部作品、讲述、日期及同源媒体路径（公开只读，缓存 60 秒） |
 | `GET` | `/api/artwork-media/:pageId/(image\|audio)` | 公开代理作品图片或讲述音频，校验归属后转发并保留 Range |
 | `GET` | `/api/auth` | 获取当前设备授权状态 |

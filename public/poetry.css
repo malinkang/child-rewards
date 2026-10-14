@@ -95,6 +95,20 @@ h2,h3 { margin:0; }
 .poem-tags { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 0; }
 .poem-tag { padding:4px 9px; border-radius:999px; background:var(--blue-soft); color:var(--muted); font-size:11px; font-weight:900; }
 .poem-body { margin:12px 0 0; color:var(--ink); font-size:17px; line-height:2; white-space:pre-wrap; overflow-wrap:anywhere; }
+.poem-body-container { min-height:36px; }
+.poem-body-loading { display:flex; align-items:center; gap:8px; margin:14px 0 6px; padding:11px 14px; border:2px dashed var(--pink-soft); border-radius:15px; background:linear-gradient(135deg,rgba(255,255,255,.94),rgba(255,244,248,.8)); color:var(--muted); font-size:14px; font-weight:800; }
+.poem-loading-sparkle { display:inline-block; font-size:16px; animation:spin-gentle 2.4s linear infinite; }
+@keyframes spin-gentle { 0% { transform:rotate(0deg); } 100% { transform:rotate(360deg); } }
+.poem-body-error { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:14px 0 6px; padding:10px 14px; border:2px solid #ffd8e0; border-radius:15px; background:#fff5f7; color:var(--pink-deep); font-size:13px; font-weight:800; }
+.poem-retry-btn { border:2px solid #fff; border-radius:10px; padding:4px 12px; background:var(--pink); color:#fff; font-size:12px; font-weight:900; box-shadow:0 3px 0 rgba(220,102,142,.16); }
+.poem-subcard { margin-top:12px; border:2px solid var(--blue-soft); border-radius:16px; background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(244,252,255,.92)); box-shadow:0 3px 0 rgba(105,189,218,.06); overflow:hidden; }
+.poem-subcard[open] { border-color:var(--pink-soft); }
+.poem-subcard-summary { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 14px; cursor:pointer; font-size:13px; font-weight:900; color:var(--ink); list-style:none; }
+.poem-subcard-summary::-webkit-details-marker { display:none; }
+.poem-subcard-summary::marker { content:""; }
+.poem-subcard-summary .subcard-toggle { color:var(--blue); font-size:12px; transition:transform .18s ease; }
+.poem-subcard[open] .subcard-toggle { transform:rotate(180deg); }
+.poem-subcard-content { padding:10px 14px 14px; border-top:1px dashed var(--blue-soft); color:var(--muted); font-size:14px; line-height:1.9; white-space:pre-wrap; overflow-wrap:anywhere; }
 .poem-meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; margin:14px 0 0; }
 .poem-meta div { padding:8px 10px; border-radius:13px; background:#fffafd; }
 .poem-meta dt { color:var(--muted); font-size:11px; font-weight:900; }
