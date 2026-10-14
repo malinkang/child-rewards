@@ -1,6 +1,6 @@
 import { mountSharedNav } from './shared-nav.js';
 import { escapeHtml } from './poetry-library.js';
-import { artworkLabel, formatArtworkDate, mapArtworks, stepIndex } from './gallery-model.js';
+import { artworkLabel, artworkTitleLabel, formatArtworkDate, mapArtworks, stepIndex } from './gallery-model.js';
 
 let authorized = false;
 let artworks = [];
@@ -69,18 +69,17 @@ function renderWall() {
 }
 
 function wallItem(artwork, index) {
-  const label = artworkLabel(artwork);
+  // The wall shows the artwork only: name + date. The description waits for
+  // the enlarged viewer.
+  const label = artworkTitleLabel(artwork);
   const date = formatArtworkDate(artwork.date);
-  const metaParts = [];
-  if (artwork.description && artwork.title) metaParts.push(artwork.title);
-  if (date) metaParts.push(date);
   return `<figure class="wall-item" style="--i:${index}">
       <button class="wall-frame" type="button" data-index="${index}" aria-label="放大查看《${escapeHtml(label)}》">
         <img class="wall-image" src="${escapeHtml(artwork.image)}" alt="${escapeHtml(label)}" loading="lazy" decoding="async" />
       </button>
       <figcaption class="wall-label">
         <span class="wall-label-text">${escapeHtml(label)}</span>
-        ${metaParts.length ? `<span class="wall-label-meta">${escapeHtml(metaParts.join(' · '))}</span>` : ''}
+        ${date ? `<span class="wall-label-meta">${escapeHtml(date)}</span>` : ''}
         ${artwork.audio ? '<span class="wall-label-audio" aria-hidden="true">🔊</span>' : ''}
       </figcaption>
     </figure>`;

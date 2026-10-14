@@ -156,6 +156,25 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+// The viewer frame pops in with a short scale animation; measure after it settles.
+async function measureViewerNav(page) {
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('.viewer-frame');
+    return Boolean(frame) && frame.getAnimations().every((animation) => animation.playState === 'finished');
+  }, null, { timeout: 2000 });
+  return page.evaluate(() => {
+    const frame = document.querySelector('.viewer-frame').getBoundingClientRect();
+    const prev = document.getElementById('viewerPrev').getBoundingClientRect();
+    const next = document.getElementById('viewerNext').getBoundingClientRect();
+    return {
+      prevGap: Math.round(frame.left - prev.right),
+      nextGap: Math.round(next.left - frame.right),
+      prevFromViewport: Math.round(prev.left),
+      nextFromViewport: Math.round(window.innerWidth - next.right),
+    };
+  });
+}
+
 async function inspectPage(browser, port, pathname) {
   const page = await browser.newPage();
   const consoleErrors = [];
@@ -169,6 +188,7 @@ async function inspectPage(browser, port, pathname) {
     items: document.querySelectorAll('.wall-item').length,
     frames: document.querySelectorAll('.wall-frame').length,
     labels: Array.from(document.querySelectorAll('.wall-label-text')).map((node) => node.textContent),
+    metas: Array.from(document.querySelectorAll('.wall-label-meta')).map((node) => node.textContent),
     frameHeights: Array.from(document.querySelectorAll('.wall-frame')).map((node) => Math.round(node.getBoundingClientRect().height)),
     audioBadges: document.querySelectorAll('.wall-label-audio').length,
     navLinks: document.querySelectorAll('.nav-link').length,
@@ -177,9 +197,11 @@ async function inspectPage(browser, port, pathname) {
     overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
   }));
   assert(summary.items === 3 && summary.frames === 3, `${pathname}: expected 3 framed artworks, saw ${summary.items}/${summary.frames}`);
-  assert(summary.labels[0] === '黑暗黑开始就是海草。', `${pathname}: expected the description as the first label, saw ${summary.labels[0]}`);
+  assert(summary.labels[0] === '多乐作品 01', `${pathname}: expected the artwork name as the first label, saw ${summary.labels[0]}`);
   assert(summary.labels[1] === '多乐作品 02', `${pathname}: expected the title as the second label, saw ${summary.labels[1]}`);
   assert(summary.labels[2] === '未命名作品', `${pathname}: expected the unknown-artwork fallback, saw ${summary.labels[2]}`);
+  assert(!summary.labels.some((label) => label.includes('海草')), `${pathname}: the wall leaked the narration description into its labels (${summary.labels.join(' | ')})`);
+  assert(summary.metas[0] === '2026年10月13日', `${pathname}: expected the Beijing date on the wall label, saw ${summary.metas[0]}`);
   assert(summary.audioBadges === 1, `${pathname}: expected one 🔊 badge, saw ${summary.audioBadges}`);
   assert(summary.frameHeights[0] > summary.frameHeights[1], `${pathname}: expected the portrait artwork to hang taller than the landscape one (${summary.frameHeights.join(',')})`);
   assert(summary.navLinks === 4, `${pathname}: expected 4 nav links, saw ${summary.navLinks}`);
@@ -204,6 +226,9 @@ async function inspectPage(browser, port, pathname) {
   assert(first.audioVisible, `${pathname}: expected the narration button for the first artwork`);
   assert(first.image === `/api/artwork-media/${ARTWORK_IDS[0]}/image`, `${pathname}: unexpected viewer image ${first.image}`);
   assert(first.bodyLocked, `${pathname}: viewer did not lock body scroll`);
+  const desktopNav = await measureViewerNav(page);
+  assert(desktopNav.prevGap >= 24 && desktopNav.nextGap >= 24, `${pathname}: viewer arrows sit too close to the frame (${desktopNav.prevGap}/${desktopNav.nextGap}px)`);
+  assert(desktopNav.prevFromViewport >= 0 && desktopNav.nextFromViewport >= 0, `${pathname}: viewer arrows leave the desktop viewport (${desktopNav.prevFromViewport}/${desktopNav.nextFromViewport}px)`);
 
   await page.click('#viewerNext');
   await page.waitForFunction(() => document.getElementById('viewerMeta').textContent === '第 2 / 3 幅');
@@ -277,6 +302,9 @@ async function inspectPage(browser, port, pathname) {
   });
   assert(mobileViewer.fits, `${pathname}: enlarged artwork overflows the mobile viewport`);
   assert(mobileViewer.overflow <= 1, `${pathname}: viewer introduced mobile overflow (${mobileViewer.overflow}px)`);
+  const mobileNav = await measureViewerNav(page);
+  assert(mobileNav.prevGap >= 8 && mobileNav.nextGap >= 8, `${pathname}: mobile viewer arrows sit too close to the frame (${mobileNav.prevGap}/${mobileNav.nextGap}px)`);
+  assert(mobileNav.prevFromViewport >= 0 && mobileNav.nextFromViewport >= 0, `${pathname}: mobile viewer arrows leave the viewport (${mobileNav.prevFromViewport}/${mobileNav.nextFromViewport}px)`);
   await page.screenshot({ path: path.join('/tmp', `gallery${pathname.replaceAll('/', '_')}-390.png`) });
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => document.getElementById('artworkViewer')?.open === false, null, { timeout: 5000 });

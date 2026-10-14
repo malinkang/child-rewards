@@ -129,7 +129,7 @@ The poetry database ID is `NOTION_POETRY_DATABASE_ID` in `wrangler.toml`. The li
 
 - `作品`: title
 - `序号`: number (ascending; missing or invalid sorts last)
-- `描述`: rich_text (child's narration; the wall and viewer use it as the primary label and fall back to the title)
+- `描述`: rich_text (child's narration; shown only in the enlarged viewer, never on the wall)
 - `上传时间`: date (UTC instants; render in Asia/Shanghai)
 - `图片`: files (HTTP(S) only; fallback when the page body has no image block)
 - `音频`: files (HTTP(S) only; fallback when the page body has no audio block, never autoplayed)
@@ -231,8 +231,8 @@ When adding an endpoint, update `README.md`, this file, and proportional tests i
 - Poetry filters combine school stage, grade, and recitation status with free-text search over title, author, dynasty, and body; grade choices follow textbook order and reset when incompatible with the selected stage.
 - Keep poetry detail cards as native `<details>`/`<summary>` disclosures, keep original line breaks in `原文`, and use only escaped text and HTTP(S) links or audio.
 - The artwork wall page must load every asset from root-absolute URLs (`/gallery.css`, `/gallery.js`, `/shared-nav.css`, `/fonts/...`) so that both `/gallery` and `/gallery/` work.
-- Wall frames stay pure CSS (dark frame line, white matte, inner hairline, offset shadow) with a white label card. Primary label text is `描述`, else `作品`, else `未命名作品`; the meta line carries the artwork name and its Beijing date, plus a 🔊 badge when narration exists.
-- Clicking a frame opens the enlarged viewer. Keep the framed image, circular prev/next buttons, the `第 N / M 幅` counter, the child's narration text, the date, and an optional play button for the narration audio. Navigation wraps; `ArrowLeft`/`ArrowRight`, ~48px pointer swipes, backdrop clicks, and `Escape` all work, and focus returns to the frame that opened the viewer.
+- Wall frames stay pure CSS (dark frame line, white matte, inner hairline, offset shadow) with a white label card. Wall cards show the artwork only: label text is `作品`, else `未命名作品`; the meta line carries the Beijing date, plus a 🔊 badge when narration exists. The `描述` narration appears only in the enlarged viewer.
+- Clicking a frame opens the enlarged viewer. Keep the framed image, circular prev/next buttons, the `第 N / M 幅` counter, the child's narration text, the date, and an optional play button for the narration audio. Navigation wraps; `ArrowLeft`/`ArrowRight`, ~48px pointer swipes, backdrop clicks, and `Escape` all work, and focus returns to the frame that opened the viewer. The prev/next buttons must keep visible clearance from the frame and stay inside the viewport at every breakpoint.
 - Never render non-`/api/artwork-media/...` media paths, never autoplay narration audio, stop and reset audio when switching or closing, and escape all Notion text before rendering.
 - Respect `prefers-reduced-motion` and keep desktop/mobile layouts free of horizontal overflow.
 

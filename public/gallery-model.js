@@ -30,6 +30,11 @@ export function mapArtworks(payload) {
 export function artworkLabel(artwork) {
   const description = `${artwork?.description || ''}`.trim();
   if (description) return description;
+  return artworkTitleLabel(artwork);
+}
+
+// Wall labels stay short: the child's narration only shows in the enlarged view.
+export function artworkTitleLabel(artwork) {
   const title = `${artwork?.title || ''}`.trim();
   return title || UNKNOWN_ARTWORK_LABEL;
 }

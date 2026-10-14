@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   UNKNOWN_ARTWORK_LABEL,
   artworkLabel,
+  artworkTitleLabel,
   formatArtworkDate,
   isSafeMediaPath,
   mapArtworks,
@@ -69,6 +70,15 @@ test('artworkLabel falls back from description to title to the unknown label', (
   assert.equal(artworkLabel({ description: '', title: '' }), UNKNOWN_ARTWORK_LABEL);
   assert.equal(artworkLabel({}), UNKNOWN_ARTWORK_LABEL);
   assert.equal(artworkLabel(null), UNKNOWN_ARTWORK_LABEL);
+});
+
+test('artworkTitleLabel always prefers the artwork name for wall cards', () => {
+  assert.equal(artworkTitleLabel({ description: '海草和海浪', title: '多乐作品 01' }), '多乐作品 01');
+  assert.equal(artworkTitleLabel({ description: '海草和海浪', title: '  多乐作品 02  ' }), '多乐作品 02');
+  assert.equal(artworkTitleLabel({ title: '多乐作品 03' }), '多乐作品 03');
+  assert.equal(artworkTitleLabel({ description: '只有描述', title: '   ' }), UNKNOWN_ARTWORK_LABEL);
+  assert.equal(artworkTitleLabel({}), UNKNOWN_ARTWORK_LABEL);
+  assert.equal(artworkTitleLabel(null), UNKNOWN_ARTWORK_LABEL);
 });
 
 test('formatArtworkDate renders Asia/Shanghai dates across the UTC boundary', () => {
