@@ -4,6 +4,7 @@ import {
   buildGradeOptions,
   buildStageOptions,
   buildStatusOptions,
+  computeProgress,
   escapeHtml,
   filterPoems,
   labelOf,
@@ -43,6 +44,8 @@ async function loadAuth() {
 async function loadPoetry(showSuccess = false) {
   const results = document.getElementById('poetryResults');
   results.innerHTML = '<div class="loading-card">正在把诗文一本本摆上书架...</div>';
+  const progressContainer = document.getElementById('poetryProgress');
+  if (progressContainer) progressContainer.innerHTML = '';
   document.getElementById('refreshButton').disabled = true;
   try {
     const response = await fetch('/api/poetry', { cache: 'no-store' });
@@ -53,6 +56,8 @@ async function loadPoetry(showSuccess = false) {
     render();
     if (showSuccess) showToast('诗文馆已刷新');
   } catch (error) {
+    const progressContainer = document.getElementById('poetryProgress');
+    if (progressContainer) progressContainer.innerHTML = '';
     results.innerHTML = `<div class="empty-card">${escapeHtml(error.message)}<br><button class="secondary-command" type="button" id="retryButton">重新读取</button></div>`;
     document.getElementById('retryButton')?.addEventListener('click', () => loadPoetry());
   } finally {
@@ -61,9 +66,65 @@ async function loadPoetry(showSuccess = false) {
 }
 
 function render() {
+  renderProgress();
   renderStats();
   renderFilters();
   renderResults();
+}
+
+function renderProgress() {
+  const container = document.getElementById('poetryProgress');
+  if (!container) return;
+  if (!poems.length) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const progress = computeProgress(poems, {
+    stage: stageFilter,
+    grade: gradeFilter,
+    masteredStatuses: stats.masteredStatuses,
+  });
+
+  const formattedPercent = progress.percent.toFixed(progress.percent % 1 === 0 ? 0 : 1);
+  const isComplete = progress.total > 0 && progress.mastered === progress.total;
+
+  container.innerHTML = `
+    <div class="progress-header">
+      <div class="progress-title-wrap">
+        <span class="progress-badge" aria-hidden="true">${isComplete ? '🎉' : '📖'}</span>
+        <div>
+          <p class="progress-eyebrow">Learning Progress</p>
+          <h3 class="progress-title">${escapeHtml(progress.scopeLabel)} · 背诵进度</h3>
+        </div>
+      </div>
+      <div class="progress-numbers">
+        <span class="progress-count">已掌握 <strong>${progress.mastered}</strong> / ${progress.total}<small> 首</small></span>
+        <span class="progress-percent ${isComplete ? 'is-complete' : ''}">${formattedPercent}%</span>
+      </div>
+    </div>
+    <div class="progress-track" role="progressbar" aria-valuenow="${formattedPercent}" aria-valuemin="0" aria-valuemax="100" aria-label="${escapeHtml(progress.scopeLabel)}背诵进度 ${formattedPercent}%">
+      <div class="progress-fill ${isComplete ? 'is-complete' : ''}" style="width: ${Math.min(100, Math.max(0, progress.percent))}%;"></div>
+    </div>
+    <div class="progress-stages">
+      ${progress.stages.map((item) => `
+        <button class="stage-pill ${item.active ? 'is-active' : ''}" type="button" data-stage-pill="${escapeHtml(item.stage)}" aria-label="切换到${escapeHtml(item.stage)}背诵进度">
+          <span class="stage-pill-name">${escapeHtml(item.stage)}</span>
+          <span class="stage-pill-count">${item.mastered}/${item.total}</span>
+          <span class="stage-pill-percent">${item.percent.toFixed(item.percent % 1 === 0 ? 0 : 1)}%</span>
+        </button>
+      `).join('')}
+    </div>
+  `;
+
+  container.querySelectorAll('[data-stage-pill]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const selected = button.getAttribute('data-stage-pill') || '';
+      stageFilter = stageFilter === selected ? '' : selected;
+      gradeFilter = normalizeGradeSelection(poems, stageFilter, gradeFilter);
+      render();
+    });
+  });
 }
 
 function renderStats() {

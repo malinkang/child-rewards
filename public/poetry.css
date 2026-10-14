@@ -26,7 +26,32 @@ h2,h3 { margin:0; }
 .icon-command:disabled { opacity:.55; cursor:progress; }
 :where(a,button,input,summary):focus-visible { outline:3px solid var(--blue); outline-offset:3px; }
 
-.stats-board { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+.progress-card { margin-top:18px; padding:20px 22px; border:4px solid #fff; border-radius:26px; background:linear-gradient(150deg,rgba(255,255,255,.96),rgba(255,244,248,.92)); box-shadow:var(--shadow); }
+.progress-card:empty { display:none; margin:0; padding:0; border:0; }
+.progress-header { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+.progress-title-wrap { display:flex; align-items:center; gap:12px; }
+.progress-badge { display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; border:3px solid #fff; border-radius:14px; background:var(--yellow-soft); font-size:22px; box-shadow:0 4px 0 rgba(220,102,142,.12); flex-shrink:0; }
+.progress-eyebrow { margin:0 0 2px; color:var(--blue); font:900 11px/1.2 "Star House",sans-serif; letter-spacing:.12em; text-transform:uppercase; }
+.progress-title { margin:0; color:var(--ink); font-size:20px; font-weight:900; line-height:1.2; }
+.progress-numbers { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+.progress-count { color:var(--muted); font-size:14px; font-weight:700; }
+.progress-count strong { color:var(--pink-deep); font-size:24px; font-weight:900; }
+.progress-count small { font-size:13px; }
+.progress-percent { display:inline-flex; align-items:center; padding:4px 12px; border:2px solid #fff; border-radius:999px; background:var(--pink-soft); color:var(--pink-deep); font-size:16px; font-weight:900; box-shadow:0 3px 0 rgba(220,102,142,.12); }
+.progress-percent.is-complete { background:var(--mint); color:#16604c; }
+.progress-track { height:16px; margin:14px 0 12px; border:3px solid #fff; border-radius:999px; background:#fcebf2; box-shadow:inset 0 2px 4px rgba(126,77,101,.1),0 2px 0 rgba(126,77,101,.06); overflow:hidden; }
+.progress-fill { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#ffd86e,var(--pink),var(--pink-deep)); box-shadow:inset 0 2px 0 rgba(255,255,255,.5); transition:width 400ms cubic-bezier(.2,.8,.2,1); }
+.progress-fill.is-complete { background:linear-gradient(90deg,var(--mint),#5bc2a8); }
+.progress-stages { display:flex; gap:8px; flex-wrap:wrap; }
+.stage-pill { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border:2px solid #fff; border-radius:999px; background:rgba(255,255,255,.8); color:var(--ink); font-size:12px; font-weight:900; box-shadow:0 3px 0 rgba(126,77,101,.08); transition:transform .12s ease,background .12s ease; }
+.stage-pill:hover { background:#fff; transform:translateY(-1px); }
+.stage-pill.is-active { background:var(--pink-soft); border-color:var(--pink); color:var(--pink-deep); }
+.stage-pill-name { color:var(--ink); }
+.stage-pill.is-active .stage-pill-name { color:var(--pink-deep); }
+.stage-pill-count { color:var(--muted); font-weight:700; }
+.stage-pill-percent { color:var(--pink-deep); }
+
+.stats-board { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-top:12px; }
 .stat-card { display:grid; gap:4px; padding:17px; border:4px solid #fff; border-radius:22px; background:rgba(255,253,253,.94); box-shadow:var(--shadow); }
 .stat-card.is-total { background:linear-gradient(150deg,#fff,#ffe6ef); }
 .stat-card.is-mastered { background:linear-gradient(150deg,#fff,#e6f8f2); }
@@ -106,6 +131,10 @@ h2,h3 { margin:0; }
 @media (max-width:540px) {
   .page-toolbar { display:grid; }
   .toolbar-actions { justify-content:flex-start; }
+  .progress-card { padding:15px; border-radius:20px; }
+  .progress-header { flex-direction:column; align-items:flex-start; gap:8px; }
+  .progress-numbers { width:100%; justify-content:space-between; }
+  .stage-pill { font-size:11px; padding:5px 10px; }
   .stat-card { padding:14px; }
   .pin-form { width:100vw; max-height:92vh; margin-top:8vh; border-radius:25px 25px 0 0; }
   .poem-chips { justify-content:flex-start; order:3; flex-basis:100%; }

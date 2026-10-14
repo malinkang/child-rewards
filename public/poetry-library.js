@@ -56,6 +56,59 @@ export function buildStatusOptions(poems = []) {
   return labels.sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
 }
 
+export function computeProgress(poems = [], { stage = '', grade = '', masteredStatuses = [] } = {}) {
+  const masteredSet = new Set(masteredStatuses.length ? masteredStatuses : ['已掌握', '已背诵', '背诵完成', '掌握']);
+
+  let scoped = poems;
+  let scopeLabel = '全部';
+  if (grade) {
+    scoped = poems.filter((poem) => labelOf(poem.grade) === grade);
+    scopeLabel = grade;
+  } else if (stage) {
+    scoped = poems.filter((poem) => labelOf(poem.stage) === stage);
+    scopeLabel = stage;
+  }
+
+  const total = scoped.length;
+  let mastered = 0;
+  for (const poem of scoped) {
+    if (masteredSet.has(poem.status)) mastered += 1;
+  }
+  const percent = total > 0 ? (mastered / total) * 100 : 0;
+
+  const stageStats = new Map();
+  for (const poem of poems) {
+    const isMastered = masteredSet.has(poem.status);
+    const s = labelOf(poem.stage);
+    const item = stageStats.get(s) || { stage: s, total: 0, mastered: 0 };
+    item.total += 1;
+    if (isMastered) item.mastered += 1;
+    stageStats.set(s, item);
+  }
+
+  const stages = buildStageOptions(poems)
+    .filter((label) => label !== UNKNOWN_LABEL)
+    .map((label) => {
+      const item = stageStats.get(label) || { stage: label, total: 0, mastered: 0 };
+      const stagePercent = item.total > 0 ? (item.mastered / item.total) * 100 : 0;
+      return {
+        stage: label,
+        total: item.total,
+        mastered: item.mastered,
+        percent: stagePercent,
+        active: stage === label,
+      };
+    });
+
+  return {
+    scopeLabel,
+    total,
+    mastered,
+    percent,
+    stages,
+  };
+}
+
 // Grade filters must stay compatible with the chosen stage: when the current
 // grade is not offered for the new stage, the selection resets.
 export function normalizeGradeSelection(poems = [], stage = '', grade = '') {

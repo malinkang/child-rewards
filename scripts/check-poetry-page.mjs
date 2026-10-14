@@ -83,6 +83,17 @@ async function inspectPage(browser, port, pathname) {
   assert(summary.navLinks === 3, `${pathname}: expected 3 nav links, saw ${summary.navLinks}`);
   assert(summary.current.includes('诗文馆'), `${pathname}: expected current nav item 诗文馆, saw ${summary.current}`);
   assert(summary.overflow <= 1, `${pathname}: horizontal overflow of ${summary.overflow}px at desktop width`);
+  const progress = await page.evaluate(() => {
+    const el = document.getElementById('poetryProgress');
+    const bar = el?.querySelector('[role="progressbar"]');
+    return {
+      exists: Boolean(el),
+      text: el?.textContent || '',
+      ariaValueNow: bar?.getAttribute('aria-valuenow') || '',
+    };
+  });
+  assert(progress.exists && progress.text.includes('背诵进度'), `${pathname}: expected progress card, saw ${progress.text}`);
+  assert(progress.ariaValueNow === '66.7', `${pathname}: expected 66.7% progress (2 of 3), saw ${progress.ariaValueNow}`);
   await page.locator('.poem-card summary').first().focus();
   await page.keyboard.press('Enter');
   const expanded = await page.evaluate(() => {

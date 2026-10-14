@@ -6,6 +6,7 @@ import {
   buildGradeOptions,
   buildStageOptions,
   buildStatusOptions,
+  computeProgress,
   escapeHtml,
   filterPoems,
   labelOf,
@@ -124,4 +125,53 @@ test('escapes rendered text and only allows HTTP(S) links and audio', () => {
     { link: 'https://example.test/poem', audio: ['https://example.test/a.mp3'] },
     { link: '', audio: [] },
   ]);
+});
+
+test('computes overall and scoped learning progress with stage breakdown', () => {
+  const testPoems = [
+    { id: '1', stage: '小学', grade: '一年级上册', status: '已掌握' },
+    { id: '2', stage: '小学', grade: '一年级上册', status: '学习中' },
+    { id: '3', stage: '小学', grade: '一年级下册', status: '未开始' },
+    { id: '4', stage: '初中', grade: '七年级上册', status: '已掌握' },
+    { id: '5', stage: '初中', grade: '七年级下册', status: '未开始' },
+    { id: '6', stage: '高中', grade: '高中必修上册', status: '未开始' },
+  ];
+
+  // Overall
+  const overall = computeProgress(testPoems, { masteredStatuses: ['已掌握'] });
+  assert.equal(overall.scopeLabel, '全部');
+  assert.equal(overall.total, 6);
+  assert.equal(overall.mastered, 2);
+  assert.equal(Math.round(overall.percent * 10) / 10, 33.3);
+  assert.equal(overall.stages.length, 3);
+  assert.deepEqual(overall.stages.map((s) => s.stage), ['小学', '初中', '高中']);
+  assert.deepEqual(overall.stages.map((s) => ({ stage: s.stage, total: s.total, mastered: s.mastered })), [
+    { stage: '小学', total: 3, mastered: 1 },
+    { stage: '初中', total: 2, mastered: 1 },
+    { stage: '高中', total: 1, mastered: 0 },
+  ]);
+  assert.equal(overall.stages[0].active, false);
+
+  // Scoped by stage
+  const primary = computeProgress(testPoems, { stage: '小学', masteredStatuses: ['已掌握'] });
+  assert.equal(primary.scopeLabel, '小学');
+  assert.equal(primary.total, 3);
+  assert.equal(primary.mastered, 1);
+  assert.equal(Math.round(primary.percent * 10) / 10, 33.3);
+  assert.equal(primary.stages[0].active, true);
+  assert.equal(primary.stages[1].active, false);
+
+  // Scoped by grade
+  const grade1 = computeProgress(testPoems, { stage: '小学', grade: '一年级上册', masteredStatuses: ['已掌握'] });
+  assert.equal(grade1.scopeLabel, '一年级上册');
+  assert.equal(grade1.total, 2);
+  assert.equal(grade1.mastered, 1);
+  assert.equal(grade1.percent, 50);
+
+  // Empty
+  const empty = computeProgress([]);
+  assert.equal(empty.total, 0);
+  assert.equal(empty.mastered, 0);
+  assert.equal(empty.percent, 0);
+  assert.deepEqual(empty.stages, []);
 });

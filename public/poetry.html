@@ -6,7 +6,7 @@
   <title>多乐的诗文馆</title>
   <link rel="preload" href="/fonts/ZCOOLKuaiLe-Regular.ttf" as="font" type="font/ttf" crossorigin />
   <link rel="stylesheet" href="/shared-nav.css?v=20261014-poetry" />
-  <link rel="stylesheet" href="/poetry.css?v=20261014-poetry" />
+  <link rel="stylesheet" href="/poetry.css?v=20261014-progress" />
 </head>
 <body>
   <a class="skip-link" href="#poetryContent">跳到诗文列表</a>
@@ -18,6 +18,8 @@
         <button id="refreshButton" class="icon-command" type="button" title="刷新" aria-label="刷新诗文馆">↻</button>
       </div>
     </header>
+
+    <section class="progress-card" id="poetryProgress" aria-label="学习背诵进度"></section>
 
     <section class="stats-board" id="poetryStats" aria-label="诗文统计"></section>
 
@@ -49,6 +51,6 @@
     </form>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="/poetry.js?v=20261014-poetry" type="module"></script>
+  <script src="/poetry.js?v=20261014-progress" type="module"></script>
 </body>
 </html>
