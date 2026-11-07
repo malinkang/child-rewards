@@ -6,6 +6,10 @@ const BEIJING_OFFSET = 8 * 60 * 60 * 1000;
 const SAFE_CODES = new Set([
   'MISSING_QIQIXUE_COOKIE', 'MISSING_QIQIXUE_SYNC_TOKEN', 'INVALID_ARGUMENTS',
   'SOURCE_AUTH_EXPIRED', 'SOURCE_REJECTED', 'SOURCE_SCHEMA_INVALID',
+  'SOURCE_SCHEMA_ENVELOPE_INVALID', 'SOURCE_SCHEMA_RET_CODE_INVALID',
+  'SOURCE_SCHEMA_DATA_INVALID', 'SOURCE_SCHEMA_DAY_INVALID',
+  'SOURCE_SCHEMA_CARD_INVALID', 'SOURCE_SCHEMA_CARD_ID_INVALID',
+  'SOURCE_SCHEMA_CARD_CONTENT_INVALID', 'SOURCE_SCHEMA_CARD_PEN_INVALID',
   'SOURCE_DATE_INVALID', 'SOURCE_STUDY_TYPE_UNSUPPORTED', 'SOURCE_RECORD_CONFLICT',
   'SOURCE_PAGINATION_INCOMPLETE', 'SOURCE_PAGINATION_REPEATED', 'SOURCE_TOTAL_CHANGED',
   'SOURCE_REQUEST_FAILED', 'SOURCE_TIMEOUT', 'SOURCE_HTTP_ERROR', 'SOURCE_INVALID_JSON',
@@ -59,33 +63,43 @@ function sourceIdPart(value) {
 }
 
 export function normalizeCard(card, day) {
-  requireValue(isObject(card) && isObject(day));
+  requireValue(isObject(card) && isObject(day), 'SOURCE_SCHEMA_CARD_INVALID');
   validateDate(day.date);
   validateDate(card.learnDate);
   requireValue(card.learnDate === day.date, 'SOURCE_DATE_INVALID');
   requireValue(card.studyType === 1, 'SOURCE_STUDY_TYPE_UNSUPPORTED');
   requireValue(typeof day.isWifiPen === 'boolean'
-    && (card.isWifiPen === null || typeof card.isWifiPen === 'boolean'));
-  requireValue(typeof card.content === 'string');
+    && (card.isWifiPen === null || typeof card.isWifiPen === 'boolean'),
+  'SOURCE_SCHEMA_CARD_PEN_INVALID');
+  requireValue(typeof card.content === 'string', 'SOURCE_SCHEMA_CARD_CONTENT_INVALID');
   let content;
   try {
     content = JSON.parse(card.content);
   } catch {
-    throw new QiqixueError('SOURCE_SCHEMA_INVALID');
+    throw new QiqixueError('SOURCE_SCHEMA_CARD_CONTENT_INVALID');
   }
   requireValue(isObject(content) && typeof content.book_name === 'string' && content.book_name.trim().length > 0
-    && content.book_name.length <= 500 && !/[\u0000-\u001f\u007f]/.test(content.book_name));
+    && content.book_name.length <= 500 && !/[\u0000-\u001f\u007f]/.test(content.book_name),
+  'SOURCE_SCHEMA_CARD_CONTENT_INVALID');
   const start = beijingTime(card.learnStart);
   const end = beijingTime(card.learnEnd);
   requireValue(card.learnStart.slice(0, 10) === day.date && end.instant >= start.instant, 'SOURCE_DATE_INVALID');
   return {
-    sourceId: `qiqixue:${sourceIdPart(card.userId)}:${sourceIdPart(card.id)}`,
+    sourceId: `qiqixue:${sourceIdPartOrCode(card.userId)}:${sourceIdPartOrCode(card.id)}`,
     book: content.book_name,
     start: start.iso,
     end: end.iso,
     seconds: (end.instant - start.instant) / 1000,
     wifiPen: card.isWifiPen ?? day.isWifiPen,
   };
+}
+
+function sourceIdPartOrCode(value) {
+  try {
+    return sourceIdPart(value);
+  } catch {
+    throw new QiqixueError('SOURCE_SCHEMA_CARD_ID_INVALID');
+  }
 }
 
 export async function fetchJson(url, options, {
@@ -124,20 +138,24 @@ export async function fetchSourceRecords({ cookie, fetchImpl = globalThis.fetch,
       throw new QiqixueError('SOURCE_AUTH_EXPIRED');
     }
     requireValue(status === 200, 'SOURCE_HTTP_ERROR');
-    requireValue(isObject(body));
+    requireValue(isObject(body), 'SOURCE_SCHEMA_ENVELOPE_INVALID');
+    requireValue(typeof body.ret === 'number' && typeof body.code === 'number',
+      'SOURCE_SCHEMA_RET_CODE_INVALID');
     requireValue(body.ret === 0 && body.code === 0, 'SOURCE_REJECTED');
     const data = body.data;
     requireValue(isObject(data) && Number.isSafeInteger(data.total) && data.total >= 0
       && data.pageNum === pageNum && data.pageSize === PAGE_SIZE
-      && Array.isArray(data.dayList) && data.dayList.length <= PAGE_SIZE);
+      && Array.isArray(data.dayList) && data.dayList.length <= PAGE_SIZE,
+    'SOURCE_SCHEMA_DATA_INVALID');
     if (total === undefined) total = data.total;
     requireValue(data.total === total, 'SOURCE_TOTAL_CHANGED');
     requireValue(data.dayList.length > 0, 'SOURCE_PAGINATION_INCOMPLETE');
     for (const day of data.dayList) {
-      requireValue(isObject(day));
+      requireValue(isObject(day), 'SOURCE_SCHEMA_DAY_INVALID');
       validateDate(day.date);
       requireValue(!days.has(day.date), 'SOURCE_PAGINATION_REPEATED');
-      requireValue(typeof day.isWifiPen === 'boolean' && Array.isArray(day.cards) && day.cards.length > 0);
+      requireValue(typeof day.isWifiPen === 'boolean' && Array.isArray(day.cards) && day.cards.length > 0,
+        'SOURCE_SCHEMA_DAY_INVALID');
       days.add(day.date);
       for (const card of day.cards) {
         const record = normalizeCard(card, day);

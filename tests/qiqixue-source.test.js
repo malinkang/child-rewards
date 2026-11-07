@@ -110,14 +110,38 @@ test('rejects unsupported study types and malformed card metadata', () => {
   for (const studyType of [0, 2, '1', null, undefined]) {
     assert.throws(() => normalizeCard(card({ studyType }), day()), { code: 'SOURCE_STUDY_TYPE_UNSUPPORTED' });
   }
-  for (const overrides of [
-    { id: 0 }, { id: -1 }, { id: 1.5 }, { id: Number.MAX_SAFE_INTEGER + 1 },
-    { id: '01' }, { userId: null }, { userId: 'private-metadata' },
-    { content: null }, { content: '{}' }, { content: 'invalid private body' },
-    { content: '[]' }, { content: 'null' }, { content: '{"book_name":7}' },
-    { content: '{"book_name":"   "}' }, { content: JSON.stringify({ book_name: 'a'.repeat(501) }) },
-    { content: JSON.stringify({ book_name: 'bad\nname' }) }, { isWifiPen: 1 }, { isWifiPen: undefined },
-  ]) assert.throws(() => normalizeCard(card(overrides), day()), { code: 'SOURCE_SCHEMA_INVALID' });
+  for (const [overrides, code] of [
+    [{ id: 0 }, 'SOURCE_SCHEMA_CARD_ID_INVALID'],
+    [{ id: -1 }, 'SOURCE_SCHEMA_CARD_ID_INVALID'],
+    [{ id: 1.5 }, 'SOURCE_SCHEMA_CARD_ID_INVALID'],
+    [{ id: Number.MAX_SAFE_INTEGER + 1 }, 'SOURCE_SCHEMA_CARD_ID_INVALID'],
+    [{ id: '01' }, 'SOURCE_SCHEMA_CARD_ID_INVALID'],
+    [{ userId: null }, 'SOURCE_SCHEMA_CARD_ID_INVALID'],
+    [{ userId: 'private-metadata' }, 'SOURCE_SCHEMA_CARD_ID_INVALID'],
+    [{ content: null }, 'SOURCE_SCHEMA_CARD_CONTENT_INVALID'],
+    [{ content: '{}' }, 'SOURCE_SCHEMA_CARD_CONTENT_INVALID'],
+    [{ content: 'invalid private body' }, 'SOURCE_SCHEMA_CARD_CONTENT_INVALID'],
+    [{ content: '[]' }, 'SOURCE_SCHEMA_CARD_CONTENT_INVALID'],
+    [{ content: 'null' }, 'SOURCE_SCHEMA_CARD_CONTENT_INVALID'],
+    [{ content: '{"book_name":7}' }, 'SOURCE_SCHEMA_CARD_CONTENT_INVALID'],
+    [{ content: '{"book_name":"   "}' }, 'SOURCE_SCHEMA_CARD_CONTENT_INVALID'],
+    [{ content: JSON.stringify({ book_name: 'a'.repeat(501) }) }, 'SOURCE_SCHEMA_CARD_CONTENT_INVALID'],
+    [{ content: JSON.stringify({ book_name: 'bad\nname' }) }, 'SOURCE_SCHEMA_CARD_CONTENT_INVALID'],
+    [{ isWifiPen: 1 }, 'SOURCE_SCHEMA_CARD_PEN_INVALID'],
+    [{ isWifiPen: undefined }, 'SOURCE_SCHEMA_CARD_PEN_INVALID'],
+  ]) assert.throws(() => normalizeCard(card(overrides), day()), { code });
+});
+
+test('reports safe field-level source schema codes without source data', () => {
+  const cases = [
+    [[{ ...page(), code: '0' }], 'SOURCE_SCHEMA_RET_CODE_INVALID'],
+    [[{ ...page(), data: { ...page().data, dayList: null } }], 'SOURCE_SCHEMA_DATA_INVALID'],
+    [[page([{ ...day(), isWifiPen: null }])], 'SOURCE_SCHEMA_DAY_INVALID'],
+  ];
+  return Promise.all(cases.map(([responses, code]) => {
+    const { fetchImpl } = mockFetch(responses);
+    return assert.rejects(fetchSourceRecords({ cookie, fetchImpl }), { code });
+  }));
 });
 
 test('paginates by distinct days while preserving all same-day sessions', async () => {
