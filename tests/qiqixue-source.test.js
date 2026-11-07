@@ -70,6 +70,8 @@ test('normalizes only the six allowed fields with Beijing seconds and inherited 
   assert.equal(normalizeCard(card(), { ...day(), isWifiPen: false }).wifiPen, false);
   assert.equal(normalizeCard(card({ userId: '9007199254740993', id: '123' }), day()).sourceId,
     'qiqixue:9007199254740993:123');
+  assert.equal(normalizeCard(card({ content: JSON.stringify({ bookName: 'CamelCase fixture' }) }), day()).book,
+    'CamelCase fixture');
 });
 
 test('uses fixed Beijing time across leap-day midnight and host time zones', () => {

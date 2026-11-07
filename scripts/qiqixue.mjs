@@ -86,12 +86,15 @@ export function normalizeCard(card, day) {
     throw new QiqixueError('SOURCE_SCHEMA_CARD_CONTENT_JSON_INVALID');
   }
   requireValue(isObject(content), 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_CONTAINER_INVALID');
-  requireValue(Object.hasOwn(content, 'book_name'), 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_MISSING');
-  requireValue(typeof content.book_name === 'string', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TYPE_INVALID');
-  requireValue(content.book_name.trim().length > 0, 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_EMPTY');
-  requireValue(content.book_name.length <= 500, 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TOO_LONG');
+  const bookField = Object.hasOwn(content, 'book_name')
+    ? 'book_name' : Object.hasOwn(content, 'bookName') ? 'bookName' : null;
+  requireValue(bookField !== null, 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_MISSING');
+  const bookName = content[bookField];
+  requireValue(typeof bookName === 'string', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TYPE_INVALID');
+  requireValue(bookName.trim().length > 0, 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_EMPTY');
+  requireValue(bookName.length <= 500, 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TOO_LONG');
   requireValue(
-    !/[\u0000-\u001f\u007f]/.test(content.book_name),
+    !/[\u0000-\u001f\u007f]/.test(bookName),
     'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_CONTROL_CHARACTER',
   );
   const start = beijingTime(card.learnStart);
@@ -99,7 +102,7 @@ export function normalizeCard(card, day) {
   requireValue(card.learnStart.slice(0, 10) === day.date && end.instant >= start.instant, 'SOURCE_DATE_INVALID');
   return {
     sourceId: `qiqixue:${sourceIdPartOrCode(card.userId)}:${sourceIdPartOrCode(card.id)}`,
-    book: content.book_name,
+    book: bookName,
     start: start.iso,
     end: end.iso,
     seconds: (end.instant - start.instant) / 1000,
