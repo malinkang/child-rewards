@@ -10,7 +10,13 @@ const SAFE_CODES = new Set([
   'SOURCE_SCHEMA_DATA_INVALID', 'SOURCE_SCHEMA_DAY_INVALID',
   'SOURCE_SCHEMA_CARD_INVALID', 'SOURCE_SCHEMA_CARD_ID_INVALID',
   'SOURCE_SCHEMA_CARD_CONTENT_TYPE_INVALID', 'SOURCE_SCHEMA_CARD_CONTENT_JSON_INVALID',
-  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_INVALID', 'SOURCE_SCHEMA_CARD_PEN_INVALID',
+  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_CONTAINER_INVALID',
+  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_MISSING',
+  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TYPE_INVALID',
+  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_EMPTY',
+  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TOO_LONG',
+  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_CONTROL_CHARACTER',
+  'SOURCE_SCHEMA_CARD_PEN_INVALID',
   'SOURCE_DATE_INVALID', 'SOURCE_STUDY_TYPE_UNSUPPORTED', 'SOURCE_RECORD_CONFLICT',
   'SOURCE_PAGINATION_INCOMPLETE', 'SOURCE_PAGINATION_REPEATED', 'SOURCE_TOTAL_CHANGED',
   'SOURCE_REQUEST_FAILED', 'SOURCE_TIMEOUT', 'SOURCE_HTTP_ERROR', 'SOURCE_INVALID_JSON',
@@ -79,9 +85,15 @@ export function normalizeCard(card, day) {
   } catch {
     throw new QiqixueError('SOURCE_SCHEMA_CARD_CONTENT_JSON_INVALID');
   }
-  requireValue(isObject(content) && typeof content.book_name === 'string' && content.book_name.trim().length > 0
-    && content.book_name.length <= 500 && !/[\u0000-\u001f\u007f]/.test(content.book_name),
-  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_INVALID');
+  requireValue(isObject(content), 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_CONTAINER_INVALID');
+  requireValue(Object.hasOwn(content, 'book_name'), 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_MISSING');
+  requireValue(typeof content.book_name === 'string', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TYPE_INVALID');
+  requireValue(content.book_name.trim().length > 0, 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_EMPTY');
+  requireValue(content.book_name.length <= 500, 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TOO_LONG');
+  requireValue(
+    !/[\u0000-\u001f\u007f]/.test(content.book_name),
+    'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_CONTROL_CHARACTER',
+  );
   const start = beijingTime(card.learnStart);
   const end = beijingTime(card.learnEnd);
   requireValue(card.learnStart.slice(0, 10) === day.date && end.instant >= start.instant, 'SOURCE_DATE_INVALID');
