@@ -19,7 +19,9 @@ const SAFE_CODES = new Set([
   'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_CONTROL_CHARACTER',
   'SOURCE_SCHEMA_CARD_PEN_INVALID',
   'SOURCE_DATE_INVALID', 'SOURCE_STUDY_TYPE_UNSUPPORTED', 'SOURCE_RECORD_CONFLICT',
-  'SOURCE_PAGINATION_INCOMPLETE', 'SOURCE_PAGINATION_REPEATED', 'SOURCE_TOTAL_CHANGED',
+  'SOURCE_PAGINATION_INCOMPLETE', 'SOURCE_PAGINATION_REPEATED',
+  'SOURCE_PAGINATION_REPEATED_IN_PAGE', 'SOURCE_PAGINATION_REPEATED_ACROSS_PAGE',
+  'SOURCE_TOTAL_CHANGED',
   'SOURCE_REQUEST_FAILED', 'SOURCE_TIMEOUT', 'SOURCE_HTTP_ERROR', 'SOURCE_INVALID_JSON',
   'DESTINATION_REQUEST_FAILED', 'DESTINATION_TIMEOUT', 'DESTINATION_HTTP_ERROR',
   'DESTINATION_INVALID_JSON', 'DESTINATION_RESPONSE_INVALID', 'SUMMARY_WRITE_FAILED',
@@ -162,6 +164,7 @@ export async function fetchSourceRecords({ cookie, fetchImpl = globalThis.fetch,
   const records = new Map();
   let total;
   for (let pageNum = 1; ; pageNum += 1) {
+    const pageDates = new Set();
     const url = new URL(SOURCE_URL);
     url.search = new URLSearchParams({ pageNum, pageSize: PAGE_SIZE }).toString();
     const { status, body } = await fetchJson(url, {
@@ -187,10 +190,18 @@ export async function fetchSourceRecords({ cookie, fetchImpl = globalThis.fetch,
     for (const day of data.dayList) {
       requireValue(isObject(day), 'SOURCE_SCHEMA_DAY_INVALID');
       validateDate(day.date);
-      requireValue(!days.has(day.date), 'SOURCE_PAGINATION_REPEATED');
+      requireValue(
+        !pageDates.has(day.date),
+        'SOURCE_PAGINATION_REPEATED_IN_PAGE',
+      );
+      requireValue(
+        !days.has(day.date),
+        'SOURCE_PAGINATION_REPEATED_ACROSS_PAGE',
+      );
       requireValue(typeof day.isWifiPen === 'boolean' && Array.isArray(day.cards) && day.cards.length > 0,
         'SOURCE_SCHEMA_DAY_INVALID');
       days.add(day.date);
+      pageDates.add(day.date);
       for (const card of day.cards) {
         const record = normalizeCard(card, day);
         const previous = records.get(record.sourceId);

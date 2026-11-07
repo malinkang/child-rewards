@@ -196,8 +196,8 @@ test('an empty source fails without destination requests', async () => {
 test('incomplete, repeated or changing pagination fails before any destination request', async (t) => {
   const cases = [
     ['empty page', [page([day()], 2), page([], 2, 2)], 'SOURCE_PAGINATION_INCOMPLETE'],
-    ['repeated day', [page([day()], 2), page([day()], 2, 2)], 'SOURCE_PAGINATION_REPEATED'],
-    ['repeated within page', [page([day(), day()], 2)], 'SOURCE_PAGINATION_REPEATED'],
+    ['repeated day', [page([day()], 2), page([day()], 2, 2)], 'SOURCE_PAGINATION_REPEATED_ACROSS_PAGE'],
+    ['repeated within page', [page([day(), day()], 2)], 'SOURCE_PAGINATION_REPEATED_IN_PAGE'],
     ['changed total', [page([day()], 2), page([day('2026-09-17')], 3, 2)], 'SOURCE_TOTAL_CHANGED'],
     ['excess days', [page([day(), day('2026-09-17')], 1)], 'SOURCE_PAGINATION_INCOMPLETE'],
     ['late invalid card', [page([day()], 2), page([day('2026-09-17', [card({ studyType: 9, learnDate: '2026-09-17' })])], 2, 2)], 'SOURCE_STUDY_TYPE_UNSUPPORTED'],
