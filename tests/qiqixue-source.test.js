@@ -140,6 +140,8 @@ test('reports safe field-level source schema codes without source data', () => {
     [[{ ...page(), code: '0' }], 'SOURCE_SCHEMA_RET_CODE_INVALID'],
     [[{ ...page(), data: { ...page().data, dayList: null } }], 'SOURCE_SCHEMA_DATA_INVALID'],
     [[page([{ ...day(), isWifiPen: null }])], 'SOURCE_SCHEMA_DAY_INVALID'],
+    [[page([day(date, [card({ content: '{"title":"Private title"}' })])])],
+      'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_TITLE'],
   ];
   return Promise.all(cases.map(([responses, code]) => {
     const { fetchImpl } = mockFetch(responses);

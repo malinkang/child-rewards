@@ -12,6 +12,11 @@ const SAFE_CODES = new Set([
   'SOURCE_SCHEMA_CARD_CONTENT_TYPE_INVALID', 'SOURCE_SCHEMA_CARD_CONTENT_JSON_INVALID',
   'SOURCE_SCHEMA_CARD_CONTENT_BOOK_CONTAINER_INVALID',
   'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_MISSING',
+  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_TITLE',
+  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_NAME',
+  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_BOOK',
+  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_BOOK_TITLE',
+  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_LOWERCASE',
   'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TYPE_INVALID',
   'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_EMPTY',
   'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TOO_LONG',
@@ -88,7 +93,17 @@ export function normalizeCard(card, day) {
   requireValue(isObject(content), 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_CONTAINER_INVALID');
   const bookField = Object.hasOwn(content, 'book_name')
     ? 'book_name' : Object.hasOwn(content, 'bookName') ? 'bookName' : null;
-  requireValue(bookField !== null, 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_MISSING');
+  if (bookField === null) {
+    const alternateField = [
+      ['title', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_TITLE'],
+      ['name', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_NAME'],
+      ['book', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_BOOK'],
+      ['bookTitle', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_BOOK_TITLE'],
+      ['bookname', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_LOWERCASE'],
+    ].find(([field]) => Object.hasOwn(content, field));
+    if (alternateField) throw new QiqixueError(alternateField[1]);
+    throw new QiqixueError('SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_MISSING');
+  }
   const bookName = content[bookField];
   requireValue(typeof bookName === 'string', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TYPE_INVALID');
   requireValue(bookName.trim().length > 0, 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_EMPTY');
