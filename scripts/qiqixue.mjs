@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 const SOURCE_URL = 'https://m.qiqixue.com/qqx/parentCenter/growth/summaryList';
 const PAGE_SIZE = 10;
 const BEIJING_OFFSET = 8 * 60 * 60 * 1000;
@@ -102,6 +104,11 @@ export function normalizeCard(card, day) {
       ['bookname', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_LOWERCASE'],
     ].find(([field]) => Object.hasOwn(content, field));
     if (alternateField) throw new QiqixueError(alternateField[1]);
+    if (process.env.QIQIXUE_SCHEMA_DIAGNOSTIC === '1') {
+      const hashes = Object.keys(content).sort().map((field) =>
+        createHash('sha256').update(field).digest('hex').slice(0, 16));
+      process.stderr.write(`QIQIXUE_BOOK_SCHEMA_KEYS=${hashes.join(',')}\n`);
+    }
     throw new QiqixueError('SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_MISSING');
   }
   const bookName = content[bookField];
