@@ -72,6 +72,14 @@ test('normalizes only the six allowed fields with Beijing seconds and inherited 
     'qiqixue:9007199254740993:123');
   assert.equal(normalizeCard(card({ content: JSON.stringify({ bookName: 'CamelCase fixture' }) }), day()).book,
     'CamelCase fixture');
+  assert.equal(normalizeCard(card({
+    content: JSON.stringify({
+      opaqueTitle: 'Inferred fixture book',
+      opaqueCode: 'Reading 4-B',
+      opaqueBody: 'Long body 123',
+      opaqueEmpty: '',
+    }),
+  }), day()).book, 'Inferred fixture book');
 });
 
 test('uses fixed Beijing time across leap-day midnight and host time zones', () => {
@@ -130,6 +138,8 @@ test('rejects unsupported study types and malformed card metadata', () => {
     [{ content: '{"book_name":"   "}' }, 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_EMPTY'],
     [{ content: JSON.stringify({ book_name: 'a'.repeat(501) }) }, 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TOO_LONG'],
     [{ content: JSON.stringify({ book_name: 'bad\nname' }) }, 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_CONTROL_CHARACTER'],
+    [{ content: JSON.stringify({ first: 'First private book', second: 'Second private book' }) },
+      'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_AMBIGUOUS'],
     [{ isWifiPen: 1 }, 'SOURCE_SCHEMA_CARD_PEN_INVALID'],
     [{ isWifiPen: undefined }, 'SOURCE_SCHEMA_CARD_PEN_INVALID'],
   ]) assert.throws(() => normalizeCard(card(overrides), day()), { code });
@@ -140,8 +150,6 @@ test('reports safe field-level source schema codes without source data', () => {
     [[{ ...page(), code: '0' }], 'SOURCE_SCHEMA_RET_CODE_INVALID'],
     [[{ ...page(), data: { ...page().data, dayList: null } }], 'SOURCE_SCHEMA_DATA_INVALID'],
     [[page([{ ...day(), isWifiPen: null }])], 'SOURCE_SCHEMA_DAY_INVALID'],
-    [[page([day(date, [card({ content: '{"title":"Private title"}' })])])],
-      'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_TITLE'],
   ];
   return Promise.all(cases.map(([responses, code]) => {
     const { fetchImpl } = mockFetch(responses);

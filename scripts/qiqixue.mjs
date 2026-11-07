@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 const SOURCE_URL = 'https://m.qiqixue.com/qqx/parentCenter/growth/summaryList';
 const PAGE_SIZE = 10;
 const BEIJING_OFFSET = 8 * 60 * 60 * 1000;
@@ -14,11 +12,7 @@ const SAFE_CODES = new Set([
   'SOURCE_SCHEMA_CARD_CONTENT_TYPE_INVALID', 'SOURCE_SCHEMA_CARD_CONTENT_JSON_INVALID',
   'SOURCE_SCHEMA_CARD_CONTENT_BOOK_CONTAINER_INVALID',
   'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_MISSING',
-  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_TITLE',
-  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_NAME',
-  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_BOOK',
-  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_BOOK_TITLE',
-  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_LOWERCASE',
+  'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_AMBIGUOUS',
   'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TYPE_INVALID',
   'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_EMPTY',
   'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TOO_LONG',
@@ -95,59 +89,25 @@ export function normalizeCard(card, day) {
   requireValue(isObject(content), 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_CONTAINER_INVALID');
   const bookField = Object.hasOwn(content, 'book_name')
     ? 'book_name' : Object.hasOwn(content, 'bookName') ? 'bookName' : null;
-  if (bookField === null) {
-    const alternateField = [
-      ['title', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_TITLE'],
-      ['name', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_NAME'],
-      ['book', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_BOOK'],
-      ['bookTitle', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_BOOK_TITLE'],
-      ['bookname', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_UNDER_LOWERCASE'],
-    ].find(([field]) => Object.hasOwn(content, field));
-    if (alternateField) throw new QiqixueError(alternateField[1]);
-    if (process.env.QIQIXUE_SCHEMA_DIAGNOSTIC === '1') {
-      const descriptions = Object.keys(content).map((field) => {
-        const value = content[field];
-        const otherStrings = Object.entries(content)
-          .filter(([otherField, other]) => otherField !== field && typeof other === 'string' && other)
-          .map(([, other]) => other);
-        const hash = createHash('sha256').update(field).digest('hex').slice(0, 16);
-        const keySize = field.length <= 8 ? 'k1' : field.length <= 20 ? 'k2'
-          : field.length <= 50 ? 'k3' : 'k4';
-        const keyShape = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(field) ? 'uuid'
-          : /^[A-Za-z_$][A-Za-z0-9_$-]*$/.test(field) ? 'ident'
-            : /\p{L}/u.test(field) ? 'text' : 'symbols';
-        if (typeof value === 'string') {
-          const size = value.length < 1 ? 'e' : value.length <= 10 ? '01'
-            : value.length <= 20 ? '02' : value.length <= 50 ? '03'
-              : value.length <= 100 ? '04' : value.length <= 200 ? '05'
-                : value.length <= 500 ? '06' : '07';
-          const profile = /^https?:\/\/|^\//i.test(value) ? 'url'
-            : /^[{[]/.test(value) ? 'json'
-              : /\p{Script=Han}/u.test(value) ? 'han'
-                : /\p{L}/u.test(value) ? 'latin'
-                  : /^\d+$/.test(value) ? 'digits'
-                    : 'symbols';
-          const nested = otherStrings.filter((other) => value && other.includes(value)).length;
-          const enclosing = otherStrings.filter((other) => value.includes(other)).length;
-          const lines = value.includes('\n') ? 'nl' : 'one';
-          const flags = [
-            /\s/u.test(value) ? 'sp' : '',
-            /\p{P}/u.test(value) ? 'pu' : '',
-            /\p{S}/u.test(value) ? 'sy' : '',
-            /\d/u.test(value) ? 'di' : '',
-            /\p{Script=Latin}/u.test(value) ? 'la' : '',
-          ].filter(Boolean).join('-') || 'plain';
-          return `${hash}:${keySize}-${keyShape}:string-${size}-${profile}-${lines}-${flags}-sub${nested}-has${enclosing}`;
-        }
-        if (Array.isArray(value)) return `${hash}:${keySize}-${keyShape}:array-${Math.min(value.length, 9)}`;
-        if (isObject(value)) return `${hash}:${keySize}-${keyShape}:object-${Math.min(Object.keys(value).length, 9)}`;
-        return `${hash}:${keySize}-${keyShape}:${value === null ? 'null' : typeof value}`;
-      });
-      process.stderr.write(`QIQIXUE_BOOK_SCHEMA_KEYS=${descriptions.join(',')}\n`);
-    }
-    throw new QiqixueError('SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_MISSING');
-  }
-  const bookName = content[bookField];
+  const inferredNames = bookField === null
+    ? Object.values(content).filter((value) =>
+      typeof value === 'string'
+      && value.length <= 100
+      && /\p{L}/u.test(value)
+      && !/^https?:\/\/|^\//i.test(value)
+      && !/^[{[]/.test(value)
+      && !/\d/u.test(value)
+      && !/[\u0000-\u001f\u007f]/.test(value))
+    : [];
+  requireValue(
+    bookField !== null || inferredNames.length > 0,
+    'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_MISSING',
+  );
+  requireValue(
+    bookField !== null || inferredNames.length === 1,
+    'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_AMBIGUOUS',
+  );
+  const bookName = bookField === null ? inferredNames[0] : content[bookField];
   requireValue(typeof bookName === 'string', 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TYPE_INVALID');
   requireValue(bookName.trim().length > 0, 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_EMPTY');
   requireValue(bookName.length <= 500, 'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TOO_LONG');
