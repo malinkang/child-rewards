@@ -105,12 +105,14 @@ export function normalizeCard(card, day) {
     ].find(([field]) => Object.hasOwn(content, field));
     if (alternateField) throw new QiqixueError(alternateField[1]);
     if (process.env.QIQIXUE_SCHEMA_DIAGNOSTIC === '1') {
-      const descriptions = Object.keys(content).sort().map((field) => {
+      const descriptions = Object.keys(content).map((field) => {
         const value = content[field];
         const hash = createHash('sha256').update(field).digest('hex').slice(0, 16);
         if (typeof value === 'string') {
-          const size = value.length < 1 ? 'e' : value.length <= 20 ? 's'
-            : value.length <= 100 ? 'm' : value.length <= 500 ? 'l' : 'x';
+          const size = value.length < 1 ? 'e' : value.length <= 10 ? '01'
+            : value.length <= 20 ? '02' : value.length <= 50 ? '03'
+              : value.length <= 100 ? '04' : value.length <= 200 ? '05'
+                : value.length <= 500 ? '06' : '07';
           const profile = /^https?:\/\/|^\//i.test(value) ? 'url'
             : /^[{[]/.test(value) ? 'json'
               : /\p{Script=Han}/u.test(value) ? 'han'
