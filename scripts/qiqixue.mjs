@@ -205,7 +205,6 @@ export async function fetchSourceRecords({ cookie, fetchImpl = globalThis.fetch,
         'SOURCE_SCHEMA_DAY_INVALID');
       const existing = days.get(day.date);
       if (existing) {
-        requireValue(existing.isWifiPen === day.isWifiPen, 'SOURCE_DAY_METADATA_CONFLICT');
         existing.cards.push(...day.cards);
       } else {
         days.set(day.date, { ...day, cards: [...day.cards] });
