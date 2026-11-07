@@ -19,9 +19,7 @@ const SAFE_CODES = new Set([
   'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_CONTROL_CHARACTER',
   'SOURCE_SCHEMA_CARD_PEN_INVALID',
   'SOURCE_DATE_INVALID', 'SOURCE_STUDY_TYPE_UNSUPPORTED', 'SOURCE_RECORD_CONFLICT',
-  'SOURCE_PAGINATION_INCOMPLETE', 'SOURCE_PAGINATION_REPEATED',
-  'SOURCE_PAGINATION_REPEATED_IN_PAGE', 'SOURCE_PAGINATION_REPEATED_ACROSS_PAGE',
-  'SOURCE_TOTAL_CHANGED',
+  'SOURCE_PAGINATION_INCOMPLETE', 'SOURCE_PAGINATION_REPEATED', 'SOURCE_TOTAL_CHANGED',
   'SOURCE_REQUEST_FAILED', 'SOURCE_TIMEOUT', 'SOURCE_HTTP_ERROR', 'SOURCE_INVALID_JSON',
   'DESTINATION_REQUEST_FAILED', 'DESTINATION_TIMEOUT', 'DESTINATION_HTTP_ERROR',
   'DESTINATION_INVALID_JSON', 'DESTINATION_RESPONSE_INVALID', 'SUMMARY_WRITE_FAILED',
@@ -160,11 +158,11 @@ export async function fetchJson(url, options, {
 
 export async function fetchSourceRecords({ cookie, fetchImpl = globalThis.fetch, timeoutMs = 20_000 } = {}) {
   requireValue(typeof cookie === 'string' && cookie.trim().length > 0, 'MISSING_QIQIXUE_COOKIE');
-  const days = new Set();
+  const days = new Map();
+  const pageSignatures = new Set();
   const records = new Map();
   let total;
   for (let pageNum = 1; ; pageNum += 1) {
-    const pageDates = new Set();
     const url = new URL(SOURCE_URL);
     url.search = new URLSearchParams({ pageNum, pageSize: PAGE_SIZE }).toString();
     const { status, body } = await fetchJson(url, {
@@ -186,30 +184,31 @@ export async function fetchSourceRecords({ cookie, fetchImpl = globalThis.fetch,
     'SOURCE_SCHEMA_DATA_INVALID');
     if (total === undefined) total = data.total;
     requireValue(data.total === total, 'SOURCE_TOTAL_CHANGED');
-    requireValue(data.dayList.length > 0, 'SOURCE_PAGINATION_INCOMPLETE');
+    const expectedPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const expectedLength = pageNum < expectedPages
+      ? PAGE_SIZE
+      : total - (expectedPages - 1) * PAGE_SIZE;
+    requireValue(
+      pageNum <= expectedPages
+        && data.dayList.length > 0
+        && data.dayList.length === expectedLength,
+      'SOURCE_PAGINATION_INCOMPLETE',
+    );
+    const signature = JSON.stringify(data.dayList);
+    requireValue(!pageSignatures.has(signature), 'SOURCE_PAGINATION_REPEATED');
+    pageSignatures.add(signature);
     for (const day of data.dayList) {
       requireValue(isObject(day), 'SOURCE_SCHEMA_DAY_INVALID');
       validateDate(day.date);
-      if (
-        process.env.QIQIXUE_PAGINATION_DIAGNOSTIC === '1'
-        && pageDates.has(day.date)
-      ) {
-        process.stderr.write(
-          `QIQIXUE_PAGINATION page=${pageNum} total=${total} entries=${data.dayList.length} unique=${new Set(data.dayList.map((item) => item?.date)).size}\n`,
-        );
-      }
-      requireValue(
-        !pageDates.has(day.date),
-        'SOURCE_PAGINATION_REPEATED_IN_PAGE',
-      );
-      requireValue(
-        !days.has(day.date),
-        'SOURCE_PAGINATION_REPEATED_ACROSS_PAGE',
-      );
       requireValue(typeof day.isWifiPen === 'boolean' && Array.isArray(day.cards) && day.cards.length > 0,
         'SOURCE_SCHEMA_DAY_INVALID');
-      days.add(day.date);
-      pageDates.add(day.date);
+      const existing = days.get(day.date);
+      if (existing) {
+        requireValue(existing.isWifiPen === day.isWifiPen, 'SOURCE_RECORD_CONFLICT');
+        existing.cards.push(...day.cards);
+      } else {
+        days.set(day.date, { ...day, cards: [...day.cards] });
+      }
       for (const card of day.cards) {
         const record = normalizeCard(card, day);
         const previous = records.get(record.sourceId);
@@ -218,6 +217,6 @@ export async function fetchSourceRecords({ cookie, fetchImpl = globalThis.fetch,
       }
     }
     requireValue(days.size <= total, 'SOURCE_PAGINATION_INCOMPLETE');
-    if (days.size === total) return { days: days.size, records: [...records.values()] };
+    if (pageNum === expectedPages) return { days: days.size, records: [...records.values()] };
   }
 }

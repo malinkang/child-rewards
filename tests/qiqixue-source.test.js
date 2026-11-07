@@ -176,6 +176,16 @@ test('paginates by distinct days while preserving all same-day sessions', async 
   }
 });
 
+test('merges flat day entries that share one calendar date', async () => {
+  const first = day(date, [card()]);
+  const second = day(date, [card({ id: 102 })]);
+  const { fetchImpl } = mockFetch([page([first, second], 2)]);
+  const result = await fetchSourceRecords({ cookie, fetchImpl });
+  assert.equal(result.days, 1);
+  assert.equal(result.records.length, 2);
+  assert.deepEqual(result.records.map(({ sourceId }) => sourceId), ['qiqixue:42:101', 'qiqixue:42:102']);
+});
+
 test('deduplicates identical source IDs without merging distinct sessions or users', async () => {
   const { fetchImpl } = mockFetch([page([day(date, [card(), card(), card({ id: 102 }), card({ userId: 43 })])])]);
   const result = await fetchSourceRecords({ cookie, fetchImpl });
@@ -194,14 +204,18 @@ test('an empty source fails without destination requests', async () => {
 });
 
 test('incomplete, repeated or changing pagination fails before any destination request', async (t) => {
+  const firstPage = () => Array.from({ length: 10 }, (_, index) =>
+    day(`2026-09-${String(18 - index).padStart(2, '0')}`));
   const cases = [
-    ['empty page', [page([day()], 2), page([], 2, 2)], 'SOURCE_PAGINATION_INCOMPLETE'],
-    ['repeated day', [page([day()], 2), page([day()], 2, 2)], 'SOURCE_PAGINATION_REPEATED_ACROSS_PAGE'],
-    ['repeated within page', [page([day(), day()], 2)], 'SOURCE_PAGINATION_REPEATED_IN_PAGE'],
-    ['changed total', [page([day()], 2), page([day('2026-09-17')], 3, 2)], 'SOURCE_TOTAL_CHANGED'],
+    ['empty page', [page(firstPage(), 11), page([], 11, 2)], 'SOURCE_PAGINATION_INCOMPLETE'],
+    ['repeated page', [page(firstPage(), 20), page(firstPage(), 20, 2)], 'SOURCE_PAGINATION_REPEATED'],
+    ['changed total', [page(firstPage(), 11), page([day('2026-09-08')], 12, 2)], 'SOURCE_TOTAL_CHANGED'],
     ['excess days', [page([day(), day('2026-09-17')], 1)], 'SOURCE_PAGINATION_INCOMPLETE'],
-    ['late invalid card', [page([day()], 2), page([day('2026-09-17', [card({ studyType: 9, learnDate: '2026-09-17' })])], 2, 2)], 'SOURCE_STUDY_TYPE_UNSUPPORTED'],
-    ['late auth error', [page([day()], 2), { code: 401, ret: -1 }], 'SOURCE_AUTH_EXPIRED'],
+    ['late invalid card', [
+      page(firstPage(), 11),
+      page([day('2026-09-08', [card({ studyType: 9, learnDate: '2026-09-08' })])], 11, 2),
+    ], 'SOURCE_STUDY_TYPE_UNSUPPORTED'],
+    ['late auth error', [page(firstPage(), 11), { code: 401, ret: -1 }], 'SOURCE_AUTH_EXPIRED'],
   ];
   for (const [name, responses, code] of cases) await t.test(name, async () => {
     const { fetchImpl, calls } = mockFetch(responses);

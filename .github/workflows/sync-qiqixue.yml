@@ -36,5 +36,4 @@ jobs:
           QIQIXUE_COOKIE: ${{ secrets.QIQIXUE_COOKIE }}
           QIQIXUE_SYNC_TOKEN: ${{ secrets.QIQIXUE_SYNC_TOKEN }}
           QIQIXUE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
-          QIQIXUE_PAGINATION_DIAGNOSTIC: '1'
         run: node scripts/sync-qiqixue.mjs --dry-run="$QIQIXUE_DRY_RUN"
