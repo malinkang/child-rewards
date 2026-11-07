@@ -107,6 +107,9 @@ export function normalizeCard(card, day) {
     if (process.env.QIQIXUE_SCHEMA_DIAGNOSTIC === '1') {
       const descriptions = Object.keys(content).map((field) => {
         const value = content[field];
+        const otherStrings = Object.entries(content)
+          .filter(([otherField, other]) => otherField !== field && typeof other === 'string' && other)
+          .map(([, other]) => other);
         const hash = createHash('sha256').update(field).digest('hex').slice(0, 16);
         const keySize = field.length <= 8 ? 'k1' : field.length <= 20 ? 'k2'
           : field.length <= 50 ? 'k3' : 'k4';
@@ -124,7 +127,10 @@ export function normalizeCard(card, day) {
                 : /\p{L}/u.test(value) ? 'latin'
                   : /^\d+$/.test(value) ? 'digits'
                     : 'symbols';
-          return `${hash}:${keySize}-${keyShape}:string-${size}-${profile}`;
+          const nested = otherStrings.filter((other) => value && other.includes(value)).length;
+          const enclosing = otherStrings.filter((other) => value.includes(other)).length;
+          const lines = value.includes('\n') ? 'nl' : 'one';
+          return `${hash}:${keySize}-${keyShape}:string-${size}-${profile}-${lines}-sub${nested}-has${enclosing}`;
         }
         if (Array.isArray(value)) return `${hash}:${keySize}-${keyShape}:array-${Math.min(value.length, 9)}`;
         if (isObject(value)) return `${hash}:${keySize}-${keyShape}:object-${Math.min(Object.keys(value).length, 9)}`;
