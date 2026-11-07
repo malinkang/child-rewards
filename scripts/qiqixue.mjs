@@ -105,9 +105,19 @@ export function normalizeCard(card, day) {
     ].find(([field]) => Object.hasOwn(content, field));
     if (alternateField) throw new QiqixueError(alternateField[1]);
     if (process.env.QIQIXUE_SCHEMA_DIAGNOSTIC === '1') {
-      const hashes = Object.keys(content).sort().map((field) =>
-        createHash('sha256').update(field).digest('hex').slice(0, 16));
-      process.stderr.write(`QIQIXUE_BOOK_SCHEMA_KEYS=${hashes.join(',')}\n`);
+      const descriptions = Object.keys(content).sort().map((field) => {
+        const value = content[field];
+        const hash = createHash('sha256').update(field).digest('hex').slice(0, 16);
+        if (typeof value === 'string') {
+          const size = value.length < 1 ? 'e' : value.length <= 20 ? 's'
+            : value.length <= 100 ? 'm' : value.length <= 500 ? 'l' : 'x';
+          return `${hash}:string-${size}`;
+        }
+        if (Array.isArray(value)) return `${hash}:array-${Math.min(value.length, 9)}`;
+        if (isObject(value)) return `${hash}:object-${Math.min(Object.keys(value).length, 9)}`;
+        return `${hash}:${value === null ? 'null' : typeof value}`;
+      });
+      process.stderr.write(`QIQIXUE_BOOK_SCHEMA_KEYS=${descriptions.join(',')}\n`);
     }
     throw new QiqixueError('SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_MISSING');
   }
