@@ -18,7 +18,8 @@ const SAFE_CODES = new Set([
   'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_TOO_LONG',
   'SOURCE_SCHEMA_CARD_CONTENT_BOOK_NAME_CONTROL_CHARACTER',
   'SOURCE_SCHEMA_CARD_PEN_INVALID',
-  'SOURCE_DATE_INVALID', 'SOURCE_STUDY_TYPE_UNSUPPORTED', 'SOURCE_RECORD_CONFLICT',
+  'SOURCE_DATE_INVALID', 'SOURCE_STUDY_TYPE_UNSUPPORTED',
+  'SOURCE_DAY_METADATA_CONFLICT', 'SOURCE_RECORD_CONFLICT',
   'SOURCE_PAGINATION_INCOMPLETE', 'SOURCE_PAGINATION_REPEATED', 'SOURCE_TOTAL_CHANGED',
   'SOURCE_REQUEST_FAILED', 'SOURCE_TIMEOUT', 'SOURCE_HTTP_ERROR', 'SOURCE_INVALID_JSON',
   'DESTINATION_REQUEST_FAILED', 'DESTINATION_TIMEOUT', 'DESTINATION_HTTP_ERROR',
@@ -204,7 +205,7 @@ export async function fetchSourceRecords({ cookie, fetchImpl = globalThis.fetch,
         'SOURCE_SCHEMA_DAY_INVALID');
       const existing = days.get(day.date);
       if (existing) {
-        requireValue(existing.isWifiPen === day.isWifiPen, 'SOURCE_RECORD_CONFLICT');
+        requireValue(existing.isWifiPen === day.isWifiPen, 'SOURCE_DAY_METADATA_CONFLICT');
         existing.cards.push(...day.cards);
       } else {
         days.set(day.date, { ...day, cards: [...day.cards] });
