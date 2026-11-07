@@ -130,7 +130,14 @@ export function normalizeCard(card, day) {
           const nested = otherStrings.filter((other) => value && other.includes(value)).length;
           const enclosing = otherStrings.filter((other) => value.includes(other)).length;
           const lines = value.includes('\n') ? 'nl' : 'one';
-          return `${hash}:${keySize}-${keyShape}:string-${size}-${profile}-${lines}-sub${nested}-has${enclosing}`;
+          const flags = [
+            /\s/u.test(value) ? 'sp' : '',
+            /\p{P}/u.test(value) ? 'pu' : '',
+            /\p{S}/u.test(value) ? 'sy' : '',
+            /\d/u.test(value) ? 'di' : '',
+            /\p{Script=Latin}/u.test(value) ? 'la' : '',
+          ].filter(Boolean).join('-') || 'plain';
+          return `${hash}:${keySize}-${keyShape}:string-${size}-${profile}-${lines}-${flags}-sub${nested}-has${enclosing}`;
         }
         if (Array.isArray(value)) return `${hash}:${keySize}-${keyShape}:array-${Math.min(value.length, 9)}`;
         if (isObject(value)) return `${hash}:${keySize}-${keyShape}:object-${Math.min(Object.keys(value).length, 9)}`;
