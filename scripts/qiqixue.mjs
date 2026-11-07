@@ -190,6 +190,14 @@ export async function fetchSourceRecords({ cookie, fetchImpl = globalThis.fetch,
     for (const day of data.dayList) {
       requireValue(isObject(day), 'SOURCE_SCHEMA_DAY_INVALID');
       validateDate(day.date);
+      if (
+        process.env.QIQIXUE_PAGINATION_DIAGNOSTIC === '1'
+        && pageDates.has(day.date)
+      ) {
+        process.stderr.write(
+          `QIQIXUE_PAGINATION page=${pageNum} total=${total} entries=${data.dayList.length} unique=${new Set(data.dayList.map((item) => item?.date)).size}\n`,
+        );
+      }
       requireValue(
         !pageDates.has(day.date),
         'SOURCE_PAGINATION_REPEATED_IN_PAGE',
