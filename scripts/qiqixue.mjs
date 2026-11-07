@@ -108,6 +108,11 @@ export function normalizeCard(card, day) {
       const descriptions = Object.keys(content).map((field) => {
         const value = content[field];
         const hash = createHash('sha256').update(field).digest('hex').slice(0, 16);
+        const keySize = field.length <= 8 ? 'k1' : field.length <= 20 ? 'k2'
+          : field.length <= 50 ? 'k3' : 'k4';
+        const keyShape = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(field) ? 'uuid'
+          : /^[A-Za-z_$][A-Za-z0-9_$-]*$/.test(field) ? 'ident'
+            : /\p{L}/u.test(field) ? 'text' : 'symbols';
         if (typeof value === 'string') {
           const size = value.length < 1 ? 'e' : value.length <= 10 ? '01'
             : value.length <= 20 ? '02' : value.length <= 50 ? '03'
@@ -119,11 +124,11 @@ export function normalizeCard(card, day) {
                 : /\p{L}/u.test(value) ? 'latin'
                   : /^\d+$/.test(value) ? 'digits'
                     : 'symbols';
-          return `${hash}:string-${size}-${profile}`;
+          return `${hash}:${keySize}-${keyShape}:string-${size}-${profile}`;
         }
-        if (Array.isArray(value)) return `${hash}:array-${Math.min(value.length, 9)}`;
-        if (isObject(value)) return `${hash}:object-${Math.min(Object.keys(value).length, 9)}`;
-        return `${hash}:${value === null ? 'null' : typeof value}`;
+        if (Array.isArray(value)) return `${hash}:${keySize}-${keyShape}:array-${Math.min(value.length, 9)}`;
+        if (isObject(value)) return `${hash}:${keySize}-${keyShape}:object-${Math.min(Object.keys(value).length, 9)}`;
+        return `${hash}:${keySize}-${keyShape}:${value === null ? 'null' : typeof value}`;
       });
       process.stderr.write(`QIQIXUE_BOOK_SCHEMA_KEYS=${descriptions.join(',')}\n`);
     }
