@@ -111,7 +111,13 @@ export function normalizeCard(card, day) {
         if (typeof value === 'string') {
           const size = value.length < 1 ? 'e' : value.length <= 20 ? 's'
             : value.length <= 100 ? 'm' : value.length <= 500 ? 'l' : 'x';
-          return `${hash}:string-${size}`;
+          const profile = /^https?:\/\/|^\//i.test(value) ? 'url'
+            : /^[{[]/.test(value) ? 'json'
+              : /\p{Script=Han}/u.test(value) ? 'han'
+                : /\p{L}/u.test(value) ? 'latin'
+                  : /^\d+$/.test(value) ? 'digits'
+                    : 'symbols';
+          return `${hash}:string-${size}-${profile}`;
         }
         if (Array.isArray(value)) return `${hash}:array-${Math.min(value.length, 9)}`;
         if (isObject(value)) return `${hash}:object-${Math.min(Object.keys(value).length, 9)}`;
